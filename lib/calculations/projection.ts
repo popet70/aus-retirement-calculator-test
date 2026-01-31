@@ -146,15 +146,15 @@ export function calculateRetirementProjection(
         splurgeActive,
       });
       
-      // Apply inflation to spending
-      spending *= cumulativeInflation;
-      
-      // Add one-off expenses
-      const oneOffThisYear = oneOffExpenses
-        .filter(expense => expense.age === age)
-        .reduce((sum, expense) => sum + expense.amount * cumulativeInflation, 0);
-      
-      spending += oneOffThisYear;
+     // Apply inflation to spending
+     spending *= cumulativeInflation;
+
+     // Add one-off expenses (apply same inflation as spending)
+    const oneOffThisYear = oneOffExpenses
+      .filter(expense => expense.age === age)
+      .reduce((sum, expense) => sum + expense.amount * cumulativeInflation, 0);
+
+     spending += oneOffThisYear; 
     }
     
     // Calculate income

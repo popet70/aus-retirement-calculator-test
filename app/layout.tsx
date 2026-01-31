@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 
+import './globals.css'
+
 export const metadata: Metadata = {
   title: 'Australian Retirement Planning Tool',
   description: 'Comprehensive retirement calculator with Monte Carlo simulation, stress testing, and detailed analysis',
