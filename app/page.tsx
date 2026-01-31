@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ComposedChart } from 'recharts';
+import { PdfExportButton } from '../components/PdfExportButton';
 
 const InfoTooltip = ({ text }: { text: string }) => {
   return (
@@ -1573,52 +1574,94 @@ if (!isMounted) {
   )}
 
       
-      <div className="bg-white rounded-lg shadow-lg p-6">
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">Australian Retirement Planning Tool</h1>
-            <p className="text-gray-600">Version 14.9 - Splurge Ramp-Down Feature</p>
-          </div>
-          <div className="text-right">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Display Values</label>
-            <div className="flex justify-end gap-2 mb-2">
-              <button 
-                onClick={() => setShowNominalDollars(false)} 
-                className={'px-4 py-2 rounded text-sm font-medium ' + (!showNominalDollars ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700')}
-              >
-                Real {getRetirementYear(retirementAge)} $
-              </button>
-              <button 
-                onClick={() => setShowNominalDollars(true)} 
-                className={'px-4 py-2 rounded text-sm font-medium ' + (showNominalDollars ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700')}
-              >
-                Nominal $
-              </button>
-            </div>
-            <p className="text-xs text-gray-500 mb-2">
-              {showNominalDollars ? 'Future dollar amounts' : 'Retirement year purchasing power'}
-            </p>
-            <button 
-              onClick={() => setShowHelpPanel(!showHelpPanel)}
-              className="w-full px-3 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 mb-2"
-            >
-              {showHelpPanel ? '📖 Hide Help' : '📖 Quick Help'}
-            </button>
-            <button
-              onClick={() => setShowAssumptions(!showAssumptions)}
-              className="w-full px-3 py-2 bg-gray-200 text-gray-800 rounded text-sm font-medium mb-2"
-            >
-             📑 Key Assumptions
-            </button>
+  <div className="bg-white rounded-lg shadow-lg p-6">
+  <div className="flex justify-between items-start mb-4">
+    <div>
+      <h1 className="text-3xl font-bold text-gray-800 mb-2">Australian Retirement Planning Tool</h1>
+      <p className="text-gray-600">Version 14.9 - Splurge Ramp-Down Feature</p>
+    </div>
+    <div className="text-right">
+      <label className="block text-sm font-medium text-gray-700 mb-2">Display Values</label>
+      <div className="flex justify-end gap-2 mb-2">
+        <button 
+          onClick={() => setShowNominalDollars(false)} 
+          className={'px-4 py-2 rounded text-sm font-medium ' + (!showNominalDollars ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700')}
+        >
+          Real {getRetirementYear(retirementAge)} $
+        </button>
+        <button 
+          onClick={() => setShowNominalDollars(true)} 
+          className={'px-4 py-2 rounded text-sm font-medium ' + (showNominalDollars ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700')}
+        >
+          Nominal $
+        </button>
+      </div>
+      <p className="text-xs text-gray-500 mb-2">
+        {showNominalDollars ? 'Future dollar amounts' : 'Retirement year purchasing power'}
+      </p>
+      
+      {/* 2x2 Button Grid */}
+      <div className="grid grid-cols-2 gap-2">
+        {/* Row 1 */}
+        <button 
+          onClick={() => setShowHelpPanel(!showHelpPanel)}
+          className="px-3 py-1 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700"
+        >
+          {showHelpPanel ? '📖 Hide Help' : '📖 Quick Help'}
+        </button>
+        
+        <button
+          onClick={() => setShowAssumptions(!showAssumptions)}
+          className="px-3 py-1 bg-gray-200 text-gray-800 rounded text-sm font-medium hover:bg-gray-300"
+        >
+          📑 Key Assumptions
+        </button>
 
-            <button 
-              onClick={exportDetailedCSV}
-              className="w-full px-3 py-2 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700"
-            >
-              📊 Export Detailed CSV
-            </button>
-          </div>
-        </div>
+        {/* Row 2 */}
+        <button 
+          onClick={exportDetailedCSV}
+          className="px-3 py-1 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700"
+        >
+          📊 Export CSV
+        </button>
+        
+        <PdfExportButton
+          retirementData={{
+            mainSuperBalance,
+            sequencingBuffer,
+            totalPensionIncome,
+            currentAge,
+            retirementAge,
+            pensionRecipientType,
+            isHomeowner,
+            baseSpending,
+            spendingPattern,
+            splurgeAmount,
+            splurgeStartAge,
+            splurgeDuration,
+            inflationRate,
+            selectedScenario,
+            includeAgePension,
+            chartData,  
+            oneOffExpenses,
+            monteCarloResults: useMonteCarlo && monteCarloResults ? {
+              medianSimulation: monteCarloResults.medianSimulation,
+              successRate: monteCarloResults.successRate,
+              percentiles: monteCarloResults.percentiles,
+            } : undefined,
+
+            historicalMonteCarloResults: useHistoricalMonteCarlo && historicalMonteCarloResults ? {
+              medianSimulation: historicalMonteCarloResults.medianSimulation,
+              successRate: historicalMonteCarloResults.successRate,
+              percentiles: historicalMonteCarloResults.percentiles,
+            } : undefined,
+
+            formalTestResults: useFormalTest && formalTestResults ? formalTestResults : undefined,
+          }}
+        />
+      </div>
+    </div>
+  </div>
 
         {showAssumptions && (
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded text-sm text-gray-800">
