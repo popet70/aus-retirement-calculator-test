@@ -284,10 +284,12 @@ describe('Retirement Calculator - Integration Tests', () => {
     });
 
     it('shows export options', () => {
-      render(<RetirementCalculator />);
-      
-      expect(screen.getByText(/Export/i)).toBeInTheDocument();
-    });
+  render(<RetirementCalculator />);
+  
+  // Now we have two export buttons
+  expect(screen.getByText(/Export CSV/i)).toBeInTheDocument();
+  expect(screen.getByText(/Export PDF Report/i)).toBeInTheDocument();
+});
   });
 
   describe('Pension Configuration', () => {
