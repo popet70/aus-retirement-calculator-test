@@ -9,6 +9,7 @@
     "lint": "echo 'Linting skipped - test coverage provides protection'",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:integration": "jest calculator-integration",
     "test:ci": "jest --ci --coverage --maxWorkers=2"
   },
   "dependencies": {
