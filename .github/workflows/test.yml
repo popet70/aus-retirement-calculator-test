@@ -35,9 +35,6 @@ jobs:
           echo "module.exports = {}" > next.config.js
         fi
     
-    - name: Run linter
-      run: npm run lint || echo "Linting skipped"
-      continue-on-error: true
     
     - name: Run tests
       run: npm run test:ci

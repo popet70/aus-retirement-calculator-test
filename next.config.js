@@ -5,7 +5,8 @@ const nextConfig = {
     unoptimized: true
   },
   eslint: {
-    dirs: ['app', 'lib', 'components'],
+    dirs: ['app', 'lib', '__tests__'],
+    ignoreDuringBuilds: false,
   },
 }
 
