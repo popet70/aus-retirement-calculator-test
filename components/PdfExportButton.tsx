@@ -82,8 +82,14 @@ export const PdfExportButton: React.FC<PdfExportButtonProps> = ({
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to generate PDF');
+        // Only try to parse JSON if it's an error response
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to generate PDF');
+        } else {
+          throw new Error(`Failed to generate PDF: ${response.status} ${response.statusText}`);
+        }
       }
       
       // Download the PDF
@@ -110,7 +116,7 @@ export const PdfExportButton: React.FC<PdfExportButtonProps> = ({
       <button
         onClick={handleGeneratePdf}
         disabled={isGenerating}
-        className="px-3 py-1 bg-red-600 text-white rounded text-sm font-medium hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+        className="w-full px-3 py-2 bg-red-600 text-white rounded text-sm font-medium hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
       >
         {isGenerating ? '⏳ Generating PDF...' : buttonText}
       </button>
