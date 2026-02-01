@@ -1,24 +1,21 @@
-const nextJest = require('next/jest')
-
-const createJestConfig = nextJest({
-  // Path to your Next.js app
-  dir: './',
-})
-
-const customJestConfig = {
-  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
-  testEnvironment: 'jest-environment-jsdom',
+module.exports = {
+  preset: 'ts-jest',
+  testEnvironment: 'jsdom',
+  roots: ['<rootDir>'],
+  testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
   },
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   collectCoverageFrom: [
-    'lib/**/*.{js,jsx,ts,tsx}',
-    '!lib/**/*.d.ts',
+    'lib/**/*.{ts,tsx}',
+    'app/**/*.{ts,tsx}',
+    '!**/*.d.ts',
     '!**/node_modules/**',
-  ],
-  testMatch: [
-    '**/__tests__/**/*.[jt]s?(x)',
-    '**/?(*.)+(spec|test).[jt]s?(x)',
+    '!**/.next/**',
+    '!**/coverage/**',
+    '!lib/utils/generatePdfReport.ts',  // Exclude old Python wrapper
+    '!lib/utils/generateClientPdf.ts',  // Exclude new client PDF (browser-only)
   ],
   coverageThreshold: {
     global: {
@@ -28,7 +25,14 @@ const customJestConfig = {
       statements: 80,
     },
   },
-  moduleDirectories: ['node_modules', '<rootDir>/'],
-}
-
-module.exports = createJestConfig(customJestConfig)
+  // Add this section to provide browser APIs for jsPDF
+  globals: {
+    'ts-jest': {
+      tsconfig: {
+        esModuleInterop: true,
+      },
+    },
+    TextEncoder: require('util').TextEncoder,
+    TextDecoder: require('util').TextDecoder,
+  },
+};
