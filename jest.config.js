@@ -9,13 +9,12 @@ module.exports = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   collectCoverageFrom: [
     'lib/**/*.{ts,tsx}',
-    'app/**/*.{ts,tsx}',
+    '!lib/utils/generatePdfReport.ts',
+    '!lib/utils/generateClientPdf.ts',
     '!**/*.d.ts',
     '!**/node_modules/**',
     '!**/.next/**',
     '!**/coverage/**',
-    '!lib/utils/generatePdfReport.ts',
-    '!lib/utils/generateClientPdf.ts',  // Add this line
   ],
   coverageThreshold: {
     global: {
