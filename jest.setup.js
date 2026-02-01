@@ -1,4 +1,4 @@
-import '@testing-library/jest-dom';
+require('@testing-library/jest-dom');
 
 // Mock jsPDF for tests (it's a browser-only library)
 jest.mock('jspdf', () => ({
