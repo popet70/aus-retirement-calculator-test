@@ -27,12 +27,14 @@ interface RetirementData {
   chartData: any[];
   oneOffExpenses?: any[];
   monteCarloResults?: {
+    medianSimulation?: any[];
     successRate?: number;
-    percentiles: any;
+    percentiles?: any;  // ← Add ? here too
   };
   historicalMonteCarloResults?: {
+    medianSimulation?: any[];
     successRate?: number;
-    percentiles: any;
+    percentiles?: any;  // ← Add ? here too
   };
   formalTestResults?: any;
 }
