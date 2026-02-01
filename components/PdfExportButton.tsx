@@ -1,10 +1,14 @@
 /**
  * PDF Export Button Component
  * 
- * Add this button to your retirement calculator to generate PDF reports
+ * Generates PDFs client-side using jsPDF
+ * Works on Vercel and other serverless platforms
  */
 
-import React, { useState } from 'react';
+'use client';
+
+import { useState } from 'react';
+import { generateClientSidePDF } from '@/lib/utils/generateClientPdf';
 
 interface PdfExportButtonProps {
   // All the data needed for the report
@@ -60,53 +64,30 @@ interface PdfExportButtonProps {
   filename?: string;
 }
 
-export const PdfExportButton: React.FC<PdfExportButtonProps> = ({
-  retirementData,
+export default function PdfExportButton({ 
+  retirementData, 
   buttonText = '📄 Export PDF Report',
-  filename = 'retirement-plan.pdf',
-}) => {
+  filename = `retirement-plan-${new Date().toISOString().split('T')[0]}.pdf`
+}: PdfExportButtonProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const handleGeneratePdf = async () => {
+  const handleGeneratePdf = () => {
     setIsGenerating(true);
     setError(null);
     
     try {
-      const response = await fetch('/api/generate-pdf-report', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(retirementData),
-      });
+      // Generate PDF client-side
+      generateClientSidePDF(retirementData, filename);
       
-      if (!response.ok) {
-        // Only try to parse JSON if it's an error response
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to generate PDF');
-        } else {
-          throw new Error(`Failed to generate PDF: ${response.status} ${response.statusText}`);
-        }
-      }
-      
-      // Download the PDF
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      // Small delay to show the generating state
+      setTimeout(() => {
+        setIsGenerating(false);
+      }, 500);
       
     } catch (err) {
       console.error('Error generating PDF:', err);
       setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
       setIsGenerating(false);
     }
   };
@@ -116,9 +97,9 @@ export const PdfExportButton: React.FC<PdfExportButtonProps> = ({
       <button
         onClick={handleGeneratePdf}
         disabled={isGenerating}
-        className="w-full px-3 py-2 bg-red-600 text-white rounded text-sm font-medium hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+        className="px-3 py-1 bg-red-600 text-white rounded text-sm font-medium hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed w-full"
       >
-        {isGenerating ? '⏳ Generating PDF...' : buttonText}
+        {isGenerating ? '⏳ Generating...' : buttonText}
       </button>
       
       {error && (
@@ -128,30 +109,4 @@ export const PdfExportButton: React.FC<PdfExportButtonProps> = ({
       )}
     </div>
   );
-};
-
-/**
- * Example usage in your RetirementCalculator component:
- * 
- * <PdfExportButton
- *   retirementData={{
- *     mainSuperBalance,
- *     sequencingBuffer,
- *     totalPensionIncome,
- *     currentAge,
- *     retirementAge,
- *     pensionRecipientType,
- *     isHomeowner,
- *     baseSpending,
- *     spendingPattern,
- *     splurgeAmount,
- *     splurgeStartAge,
- *     splurgeDuration,
- *     inflationRate,
- *     selectedScenario,
- *     includeAgePension,
- *     chartData,
- *     oneOffExpenses,
- *   }}
- * />
- */
+}

@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ComposedChart } from 'recharts';
-import { PdfExportButton } from '../components/PdfExportButton';
+import PdfExportButton from '@/components/PdfExportButton';
 
 const InfoTooltip = ({ text }: { text: string }) => {
   return (
