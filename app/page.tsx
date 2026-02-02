@@ -3,6 +3,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ComposedChart } from 'recharts';
 import PdfExportButton from '@/components/PdfExportButton';
+import { PartnerDetails, createDefaultPartner, calculateAgePensionForCouple, calculateReversionaryPension } from '@/lib/utils/coupleTracking';
+import { CoupleTrackingPanel } from '@/components/CoupleTrackingPanel';
+
 
 const InfoTooltip = ({ text }: { text: string }) => {
   return (
@@ -20,6 +23,31 @@ const InfoTooltip = ({ text }: { text: string }) => {
       </span>
     </span>
   );
+};
+
+// Custom tooltip that shows partner ages when couple tracking is enabled
+const CustomChartTooltip = ({ active, payload, label, enableCoupleTracking, partner1Name, partner2Name }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    const showPartnerAges = enableCoupleTracking && data.partner1Age !== null;
+    
+    return (
+      <div className="bg-white p-3 border border-gray-300 rounded shadow-lg">
+        <p className="font-semibold mb-1">Year {label}</p>
+        {showPartnerAges && (
+          <p className="text-xs text-gray-600 mb-2">
+            {partner1Name}: Age {data.partner1Age} | {partner2Name}: Age {data.partner2Age}
+          </p>
+        )}
+        {payload.map((entry: any, index: number) => (
+          <p key={index} style={{ color: entry.color }}>
+            {entry.name}: {new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 }).format(entry.value)}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
 };
 
 const RetirementCalculator = () => {
@@ -68,12 +96,40 @@ const RetirementCalculator = () => {
     { description: 'Significant Accessibility Modifications', age: 82, amount: 30000 },
     { description: 'In-home Care Setup', age: 84, amount: 15000 }
   ]);
+  const [includeOneOffExpenses, setIncludeOneOffExpenses] = useState(true); // Toggle to enable/disable
   const [showOneOffExpenses, setShowOneOffExpenses] = useState(true);
   const [showPensionSummary, setShowPensionSummary] = useState(true);
   const [currentAge, setCurrentAge] = useState(55);
   const [retirementAge, setRetirementAge] = useState(60);
   const [pensionRecipientType, setPensionRecipientType] = useState<'single' | 'couple'>('couple');
   
+  // Couple Tracking
+  const [enableCoupleTracking, setEnableCoupleTracking] = useState(false);
+  const [partner1, setPartner1] = useState<PartnerDetails>({
+    name: 'Partner 1',
+    currentAge: 55,
+    retirementAge: 60,
+    superBalance: 1000000,
+    pensionIncome: 10000,
+    reversionaryRate: 67,
+    gender: 'male',
+    deathAge: 85,
+    preRetirementIncome: 0,
+  });
+  const [partner2, setPartner2] = useState<PartnerDetails>({
+    name: 'Partner 2',
+    currentAge: 56,
+    retirementAge: 60,
+    superBalance: 0,
+    pensionIncome: 100000,
+    reversionaryRate: 67,
+    gender: 'female',
+    deathAge: 89,
+    preRetirementIncome: 0,
+});
+  const [deathScenario, setDeathScenario] = useState<'both-alive' | 'partner1-dies' | 'partner2-dies'>('both-alive');
+  const [singleSpendingMultiplier, setSingleSpendingMultiplier] = useState(0.65); // Single person uses ~65% of couple spending
+
   // Disclaimer
   const [termsAcknowledged, setTermsAcknowledged] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -499,15 +555,82 @@ const RetirementCalculator = () => {
   };
 
   const runSimulation = (returnSequence: number[], cpiRate: number, healthShock: boolean, maxYears?: number) => {
-    let mainSuper = mainSuperBalance;
-    let seqBuffer = sequencingBuffer;
+    // Initialize with STARTING values (both partners alive initially in couple tracking mode)
+    let mainSuper: number;
+    let seqBuffer: number;
+    let startAge: number;
+    let initialPortfolio: number;
+    
+    // Couple tracking state
+    let partner1Alive = true;
+    let partner2Alive = true;
+    let currentPensionIncome: number;
+    
+    // Track individual super balances for couple tracking
+    let partner1Super = 0;
+    let partner2Super = 0;
+    
+    if (enableCoupleTracking && pensionRecipientType === 'couple') {
+      // Couple tracking mode - track super separately
+      partner1Super = partner1.superBalance;
+      partner2Super = partner2.superBalance;
+      mainSuper = partner1Super + partner2Super; // Combined for display
+      seqBuffer = sequencingBuffer;
+      
+      // Calculate which partner retires FIRST chronologically
+      const yearsUntilPartner1Retires = partner1.retirementAge - partner1.currentAge;
+      const yearsUntilPartner2Retires = partner2.retirementAge - partner2.currentAge;
+      
+      if (yearsUntilPartner1Retires <= yearsUntilPartner2Retires) {
+        // Partner 1 retires first (or same time)
+        startAge = partner1.retirementAge;
+      } else {
+        // Partner 2 retires first
+        startAge = partner2.retirementAge;
+      }
+      
+      initialPortfolio = mainSuper + seqBuffer;
+      // Pension income starts at 0, will be added as each partner retires
+      currentPensionIncome = 0;
+    } else {
+      // Simple mode
+      mainSuper = mainSuperBalance;
+      seqBuffer = sequencingBuffer;
+      startAge = retirementAge;
+      initialPortfolio = mainSuperBalance + sequencingBuffer;
+      currentPensionIncome = totalPensionIncome;
+    }
+    
     let cashAccount = 0;
     const results = [];
-    const startAge = retirementAge;
-    const initialPortfolio = mainSuperBalance + sequencingBuffer;
     let currentSpendingBase = baseSpending;
     const initialWithdrawalRate = baseSpending / initialPortfolio;
     const yearsToRun = maxYears || 35;
+    
+    // Track individual partner ages for death events
+    // Year 1 = first retirement, so calculate each partner's age at that time
+    let partner1CurrentAge: number;
+    let partner2CurrentAge: number;
+    
+    if (enableCoupleTracking && pensionRecipientType === 'couple') {
+      // Calculate which partner retires first chronologically
+      const yearsUntilPartner1Retires = partner1.retirementAge - partner1.currentAge;
+      const yearsUntilPartner2Retires = partner2.retirementAge - partner2.currentAge;
+      
+      let yearsUntilFirstRetirement: number;
+      if (yearsUntilPartner1Retires <= yearsUntilPartner2Retires) {
+        yearsUntilFirstRetirement = yearsUntilPartner1Retires;
+      } else {
+        yearsUntilFirstRetirement = yearsUntilPartner2Retires;
+      }
+      
+      // Calculate each partner's age at Year 1 (first retirement)
+      partner1CurrentAge = partner1.currentAge + yearsUntilFirstRetirement;
+      partner2CurrentAge = partner2.currentAge + yearsUntilFirstRetirement;
+    } else {
+      partner1CurrentAge = currentAge;
+      partner2CurrentAge = currentAge;
+    }
     
     // Aged care state tracking
     let inAgedCare = false;
@@ -532,6 +655,109 @@ const RetirementCalculator = () => {
     for (let year = 1; year <= yearsToRun; year++) {
       const age = startAge + year - 1;
       let guardrailStatus = 'normal';
+      
+      // Increment individual partner ages (if couple tracking enabled)
+      if (year > 1 && enableCoupleTracking && pensionRecipientType === 'couple') {
+        partner1CurrentAge++;
+        partner2CurrentAge++;
+      }
+      
+      // COUPLE TRACKING RETIREMENT EVENTS  
+      // Track pre-retirement income and add pensions when each partner retires
+      let preRetirementIncome = 0;
+      if (enableCoupleTracking && pensionRecipientType === 'couple') {
+        // Partner 1 - either working or retired
+        if (partner1Alive) {
+          if (partner1CurrentAge < partner1.retirementAge) {
+            // Still working - add pre-retirement income
+            preRetirementIncome += partner1.preRetirementIncome;
+          } else if (partner1CurrentAge === partner1.retirementAge || (year === 1 && partner1CurrentAge >= partner1.retirementAge)) {
+            // Retiring this year - add pension
+            // Also add if Year 1 and already past retirement age
+            currentPensionIncome += partner1.pensionIncome;
+          }
+          // If already retired (age > retirement), pension already in currentPensionIncome
+        }
+        
+        // Partner 2 - either working or retired
+        if (partner2Alive) {
+          if (partner2CurrentAge < partner2.retirementAge) {
+            // Still working - add pre-retirement income
+            preRetirementIncome += partner2.preRetirementIncome;
+          } else if (partner2CurrentAge === partner2.retirementAge || (year === 1 && partner2CurrentAge >= partner2.retirementAge)) {
+            // Retiring this year - add pension
+            // Also add if Year 1 and already past retirement age
+            currentPensionIncome += partner2.pensionIncome;
+          }
+          // If already retired (age > retirement), pension already in currentPensionIncome
+        }
+      }
+      
+      // COUPLE TRACKING DEATH EVENTS
+      // Only apply death events if NOT in "both alive" scenario
+      if (enableCoupleTracking && pensionRecipientType === 'couple' && deathScenario !== 'both-alive') {
+        // Check Partner 1 death (only if "partner1-dies" scenario selected)
+        if (deathScenario === 'partner1-dies' && partner1Alive && partner1CurrentAge >= partner1.deathAge) {
+          partner1Alive = false;
+          // Transfer Partner 1's super to Partner 2
+          partner2Super += partner1Super;
+          partner1Super = 0;
+          mainSuper = partner1Super + partner2Super;
+          // Reduce Partner 1's pension to reversionary rate
+          const reversionaryAmount = calculateReversionaryPension(partner1.pensionIncome, partner1.reversionaryRate);
+          // Recalculate total: partner1's reversionary + partner2's full (if retired)
+          currentPensionIncome = reversionaryAmount;
+          if (partner2Alive && partner2CurrentAge >= partner2.retirementAge) {
+            currentPensionIncome += partner2.pensionIncome;
+          }
+          // Reduce spending to single person rate
+          currentSpendingBase = baseSpending * singleSpendingMultiplier;
+        }
+        
+        // Check Partner 2 death (only if "partner2-dies" scenario selected)
+        if (deathScenario === 'partner2-dies' && partner2Alive && partner2CurrentAge >= partner2.deathAge) {
+          partner2Alive = false;
+          // Transfer Partner 2's super to Partner 1
+          partner1Super += partner2Super;
+          partner2Super = 0;
+          mainSuper = partner1Super + partner2Super;
+          // Reduce Partner 2's pension to reversionary rate
+          const reversionaryAmount = calculateReversionaryPension(partner2.pensionIncome, partner2.reversionaryRate);
+          // Recalculate total: partner1's full (if retired) + partner2's reversionary
+          currentPensionIncome = reversionaryAmount;
+          if (partner1Alive && partner1CurrentAge >= partner1.retirementAge) {
+            currentPensionIncome += partner1.pensionIncome;
+          }
+          // Reduce spending to single person rate
+          currentSpendingBase = baseSpending * singleSpendingMultiplier;
+        }
+        
+        // If BOTH partners are dead, end simulation but keep final balances
+        if (!partner1Alive && !partner2Alive) {
+          currentPensionIncome = 0;
+          // Don't process any more spending/withdrawals this year
+          // Just record final state and end
+          results.push({
+            year,
+            age,
+            mainSuper,
+            seqBuffer,
+            cashAccount,
+            totalBalance: mainSuper + seqBuffer + cashAccount,
+            spending: 0, // No spending - both dead
+            income: 0, // No income - both dead
+            pensionIncome: 0,
+            agePension: 0,
+            withdrawn: 0,
+            minDrawdown: 0,
+            cpiRate,
+            guardrailStatus: 'normal',
+            splurgeActive: false,
+            oneOffExpense: 0
+          });
+          break; // End simulation - both dead
+        }
+      }
       
       // Store starting balances for minimum drawdown calculation
       const startingMainSuper = mainSuper;
@@ -589,7 +815,7 @@ const RetirementCalculator = () => {
     guardrailStatus = 'decrease';
     const proposedSpending = currentSpendingBase * (1 - guardrailAdjustment / 100);
     const spendingMultiplier = getSpendingMultiplier(year);
-    const indexedPensionFloor = totalPensionIncome / spendingMultiplier;
+    const indexedPensionFloor = currentPensionIncome / spendingMultiplier;
     currentSpendingBase = Math.max(proposedSpending, indexedPensionFloor);
   }
 }
@@ -671,38 +897,52 @@ const RetirementCalculator = () => {
       
       // Add one-off expenses for this age (not subject to guardrails)
       let oneOffAddition = 0;
-      oneOffExpenses.forEach(expense => {
-        if (expense.age === age) {
-          oneOffAddition += expense.amount;
-        }
-      });
+      if (includeOneOffExpenses) {
+        oneOffExpenses.forEach(expense => {
+          if (expense.age === age) {
+            oneOffAddition += expense.amount;
+          }
+        });
+      }
       
       const totalSpending = inflationAdjustedSpending * spendingMultiplier + additionalCosts + oneOffAddition;
 
-      // Use dynamic Age Pension parameters based on current partner status
-      const currentPensionParams = (pensionRecipientType === 'couple' && !partnerAlive) 
-        ? {
+      const totalAssets = mainSuper + seqBuffer;
+      
+      // Determine which age pension params to use based on couple survival status
+      // Handles both couple tracking deaths and aged care deaths
+      let activePensionParams = agePensionParams; // Default from state
+      if (pensionRecipientType === 'couple') {
+        // Check couple tracking deaths OR aged care death
+        const anyPartnerDead = (enableCoupleTracking && (!partner1Alive || !partner2Alive)) || !partnerAlive;
+        if (anyPartnerDead) {
+          activePensionParams = {
             eligibilityAge: 67,
-            maxPensionPerYear: 29754,  // Single rate (partner died)
+            maxPensionPerYear: 29754,  // Single rate
             assetTestThresholdHomeowner: 314000,
             assetTestCutoffHomeowner: 695500,
             assetTestThresholdNonHomeowner: 566000,
             assetTestCutoffNonHomeowner: 947500,
             assetTaperPerYear: 78,
-            incomeTestFreeArea: 5512,
+            incomeTestFreeArea: 5512,  // Single rate
             incomeTaperRate: 0.50
-          }
-        : agePensionParams;
-
-      const totalAssets = mainSuper + seqBuffer;
-      const indexedMaxPension = currentPensionParams.maxPensionPerYear * Math.pow(1 + cpiRate / 100, year - 1);
-      const indexedThreshold = (isHomeowner ? currentPensionParams.assetTestThresholdHomeowner : currentPensionParams.assetTestThresholdNonHomeowner) * Math.pow(1 + cpiRate / 100, year - 1);
-      const indexedCutoff = (isHomeowner ? currentPensionParams.assetTestCutoffHomeowner : currentPensionParams.assetTestCutoffNonHomeowner) * Math.pow(1 + cpiRate / 100, year - 1);
-      const indexedTaper = currentPensionParams.assetTaperPerYear * Math.pow(1 + cpiRate / 100, year - 1);
-      const indexedPensionIncome = totalPensionIncome * Math.pow(1 + cpiRate / 100, year - 1);
+          };
+        }
+      }
+      
+      const indexedMaxPension = activePensionParams.maxPensionPerYear * Math.pow(1 + cpiRate / 100, year - 1);
+      const indexedThreshold = (isHomeowner ? activePensionParams.assetTestThresholdHomeowner : activePensionParams.assetTestThresholdNonHomeowner) * Math.pow(1 + cpiRate / 100, year - 1);
+      const indexedCutoff = (isHomeowner ? activePensionParams.assetTestCutoffHomeowner : activePensionParams.assetTestCutoffNonHomeowner) * Math.pow(1 + cpiRate / 100, year - 1);
+      const indexedTaper = activePensionParams.assetTaperPerYear * Math.pow(1 + cpiRate / 100, year - 1);
+      const indexedPensionIncome = currentPensionIncome * Math.pow(1 + cpiRate / 100, year - 1);
       
       let agePension = 0;
-      if (includeAgePension && age >= currentPensionParams.eligibilityAge) {
+      // Check if anyone is alive to receive age pension
+      const anyoneAlive = enableCoupleTracking && pensionRecipientType === 'couple'
+        ? (partner1Alive || partner2Alive)
+        : true; // In simple mode, assume alive
+        
+      if (includeAgePension && anyoneAlive && age >= activePensionParams.eligibilityAge) {
         let assetTestPension = indexedMaxPension;
         if (totalAssets > indexedThreshold) {
           const excess = totalAssets - indexedThreshold;
@@ -711,27 +951,75 @@ const RetirementCalculator = () => {
         }
         if (totalAssets >= indexedCutoff) assetTestPension = 0;
 
-        const indexedIncomeTestFreeArea = currentPensionParams.incomeTestFreeArea * Math.pow(1 + cpiRate / 100, year - 1);
+        const indexedIncomeTestFreeArea = activePensionParams.incomeTestFreeArea * Math.pow(1 + cpiRate / 100, year - 1);
         let incomeTestPension = indexedMaxPension;
         if (indexedPensionIncome > indexedIncomeTestFreeArea) {
           const excessIncome = indexedPensionIncome - indexedIncomeTestFreeArea;
-          const reduction = excessIncome * currentPensionParams.incomeTaperRate;
+          const reduction = excessIncome * activePensionParams.incomeTaperRate;
           incomeTestPension = Math.max(0, indexedMaxPension - reduction);
         }
         agePension = Math.min(assetTestPension, incomeTestPension);
       }
       
-      const totalIncome = indexedPensionIncome + agePension;
+      // Inflate pre-retirement income (if any)
+      const indexedPreRetirementIncome = preRetirementIncome * Math.pow(1 + cpiRate / 100, year - 1);
+      
+      const totalIncome = indexedPensionIncome + agePension + indexedPreRetirementIncome;
+      
+      // If income > spending, save excess to cash account
+      if (totalIncome > totalSpending) {
+        const excess = totalIncome - totalSpending;
+        cashAccount += excess;
+      }
+      
       const netSpendingNeed = Math.max(0, totalSpending - totalIncome);
 
       // STEP 1: MINIMUM DRAWDOWN (Required by law - must happen first)
-      // Withdraw minimum % from Main Super based on age and deposit to Cash
-      const minDrawdown = getMinimumDrawdown(age, startingMainSuper);
+      // For couple tracking: only retired partners must take minimum drawdown
       let superDrawnForMinimum = 0;
-      if (minDrawdown > 0 && mainSuper >= minDrawdown) {
-        mainSuper -= minDrawdown;
-        cashAccount += minDrawdown;
-        superDrawnForMinimum = minDrawdown;
+      let minDrawdown = 0; // Total minimum drawdown required
+      let accessibleSuper = mainSuper; // Total super accessible (retired partners only in couple mode)
+      let insufficientFundsWarning = false;
+      
+      if (enableCoupleTracking && pensionRecipientType === 'couple') {
+        // Only retired partners can access their super
+        accessibleSuper = 0;
+        if (partner1Alive && partner1CurrentAge >= partner1.retirementAge) {
+          accessibleSuper += partner1Super;
+        }
+        if (partner2Alive && partner2CurrentAge >= partner2.retirementAge) {
+          accessibleSuper += partner2Super;
+        }
+        
+        // Minimum drawdown from each retired partner's super
+        if (partner1Alive && partner1CurrentAge >= partner1.retirementAge && partner1Super > 0) {
+          const p1MinDrawdown = getMinimumDrawdown(partner1CurrentAge, partner1Super);
+          if (p1MinDrawdown > 0 && partner1Super >= p1MinDrawdown) {
+            partner1Super -= p1MinDrawdown;
+            cashAccount += p1MinDrawdown;
+            superDrawnForMinimum += p1MinDrawdown;
+            minDrawdown += p1MinDrawdown;
+          }
+        }
+        if (partner2Alive && partner2CurrentAge >= partner2.retirementAge && partner2Super > 0) {
+          const p2MinDrawdown = getMinimumDrawdown(partner2CurrentAge, partner2Super);
+          if (p2MinDrawdown > 0 && partner2Super >= p2MinDrawdown) {
+            partner2Super -= p2MinDrawdown;
+            cashAccount += p2MinDrawdown;
+            superDrawnForMinimum += p2MinDrawdown;
+            minDrawdown += p2MinDrawdown;
+          }
+        }
+        // Update combined mainSuper for display
+        mainSuper = partner1Super + partner2Super;
+      } else {
+        // Simple mode - normal minimum drawdown
+        minDrawdown = getMinimumDrawdown(age, startingMainSuper);
+        if (minDrawdown > 0 && mainSuper >= minDrawdown) {
+          mainSuper -= minDrawdown;
+          cashAccount += minDrawdown;
+          superDrawnForMinimum = minDrawdown;
+        }
       }
 
       // STEP 2: SPENDING WITHDRAWAL LOGIC
@@ -756,13 +1044,55 @@ const RetirementCalculator = () => {
             remaining = remaining - seqBuffer;
             seqBuffer = 0;
             
-            // Withdraw from Main Super (additional to minimum drawdown)
-            if (mainSuper >= remaining) {
-              mainSuper -= remaining;
-              withdrawn += remaining;
+            // Withdraw from Super (only accessible super in couple mode)
+            // In couple mode: only retired partners can access their super
+            if (enableCoupleTracking && pensionRecipientType === 'couple') {
+              // Recalculate accessible super AFTER minimum drawdown
+              const accessibleFromRetired = 
+                (partner1Alive && partner1CurrentAge >= partner1.retirementAge ? partner1Super : 0) +
+                (partner2Alive && partner2CurrentAge >= partner2.retirementAge ? partner2Super : 0);
+              
+              if (accessibleFromRetired >= remaining) {
+                // Proportionally withdraw from each retired partner's super
+                if (accessibleFromRetired > 0) {
+                  const p1Ratio = (partner1Alive && partner1CurrentAge >= partner1.retirementAge) 
+                    ? partner1Super / accessibleFromRetired : 0;
+                  const p2Ratio = (partner2Alive && partner2CurrentAge >= partner2.retirementAge) 
+                    ? partner2Super / accessibleFromRetired : 0;
+                  
+                  const p1Withdrawal = remaining * p1Ratio;
+                  const p2Withdrawal = remaining * p2Ratio;
+                  
+                  partner1Super -= p1Withdrawal;
+                  partner2Super -= p2Withdrawal;
+                  mainSuper = partner1Super + partner2Super;
+                  withdrawn += remaining;
+                }
+              } else {
+                // Insufficient accessible funds - withdraw what we can
+                if (accessibleFromRetired > 0) {
+                  // Withdraw all accessible super
+                  if (partner1Alive && partner1CurrentAge >= partner1.retirementAge) {
+                    withdrawn += partner1Super;
+                    partner1Super = 0;
+                  }
+                  if (partner2Alive && partner2CurrentAge >= partner2.retirementAge) {
+                    withdrawn += partner2Super;
+                    partner2Super = 0;
+                  }
+                  mainSuper = partner1Super + partner2Super;
+                }
+                insufficientFundsWarning = true;
+              }
             } else {
-              withdrawn += mainSuper;
-              mainSuper = 0;
+              // Simple mode - normal withdrawal
+              if (mainSuper >= remaining) {
+                mainSuper -= remaining;
+                withdrawn += remaining;
+              } else {
+                withdrawn += mainSuper;
+                mainSuper = 0;
+              }
             }
           }
         }
@@ -823,7 +1153,17 @@ const RetirementCalculator = () => {
       // Main Super: Variable returns based on scenario/historical/Monte Carlo
       // Buffer & Cash: Fixed 3% real return (defensive assets)
       const yearReturn = returnSequence[year - 1] || 0;
-      mainSuper = mainSuper * (1 + yearReturn / 100);
+      
+      if (enableCoupleTracking && pensionRecipientType === 'couple') {
+        // Apply returns to individual partner super balances
+        partner1Super = partner1Super * (1 + yearReturn / 100);
+        partner2Super = partner2Super * (1 + yearReturn / 100);
+        mainSuper = partner1Super + partner2Super; // Update combined total
+      } else {
+        // Simple mode - apply to mainSuper directly
+        mainSuper = mainSuper * (1 + yearReturn / 100);
+      }
+      
       seqBuffer = seqBuffer * 1.03;  // 3% real
       cashAccount = cashAccount * 1.03;  // 3% real
       const totalBalance = mainSuper + seqBuffer + cashAccount;
@@ -838,7 +1178,8 @@ const RetirementCalculator = () => {
         debtBalance: totalDebtBalance,
         debtPayment: totalDebtPayment,
         debtInterestPaid: totalDebtInterest,
-        debtPrincipalPaid: totalDebtPrincipal
+        debtPrincipalPaid: totalDebtPrincipal,
+        insufficientFunds: insufficientFundsWarning
       });
 
       if (totalBalance <= 0) break;
@@ -916,7 +1257,16 @@ const RetirementCalculator = () => {
       }
     }
 
-    const successful = allResults.filter(r => r.length === 35 && r[34].totalBalance > 0).length;
+    // Count successes
+    // Success = portfolio has positive balance at the END of the simulation
+    // (whether that's age 100, or earlier if both partners died)
+    const successful = allResults.filter(r => {
+      if (r.length === 0) return false;
+      const lastYear = r[r.length - 1];
+      // Success if final balance > 0, regardless of how long simulation ran
+      // (simulation may end early if both partners die, which is fine)
+      return lastYear && lastYear.totalBalance > 0;
+    }).length;
     const successRate = (successful / monteCarloRuns) * 100;
     const finalBalances = allResults.map(r => {
       const lastYear = r[r.length - 1];
@@ -1154,7 +1504,15 @@ const RetirementCalculator = () => {
       }
     }
 
-    const successful = allResults.filter(r => r.length === 35 && r[34].totalBalance > 0).length;
+    // Count successes
+    // Success = portfolio has positive balance at the END of the simulation
+    // (whether that's age 100, or earlier if both partners died)
+    const successful = allResults.filter(r => {
+      if (r.length === 0) return false;
+      const lastYear = r[r.length - 1];
+      // Success if final balance > 0, regardless of how long simulation ran
+      return lastYear && lastYear.totalBalance > 0;
+    }).length;
     const successRate = (successful / actualRuns) * 100;
     const finalBalances = allResults.map(r => {
       const lastYear = r[r.length - 1];
@@ -1249,34 +1607,73 @@ const RetirementCalculator = () => {
     return runSimulation(returns, inflationRate, false, 35);
   }, [mainSuperBalance, sequencingBuffer, totalPensionIncome, baseSpending,
       selectedScenario, isHomeowner, includeAgePension, spendingPattern, useGuardrails, upperGuardrail, lowerGuardrail, guardrailAdjustment,
-      useHistoricalData, historicalPeriod, useMonteCarlo, monteCarloResults, splurgeAmount, splurgeStartAge, splurgeDuration, oneOffExpenses,
+      useHistoricalData, historicalPeriod, useMonteCarlo, monteCarloResults, splurgeAmount, splurgeStartAge, splurgeDuration, oneOffExpenses, includeOneOffExpenses,
       currentAge, retirementAge, agePensionParams, pensionRecipientType, selectedFormalTest, formalTestResults,
       includeAgedCare, agedCareApproach, agedCareRAD, agedCareAnnualCost, deterministicAgedCareAge, agedCareDuration,
-      personAtHomeSpending, deathInCare]);
+      personAtHomeSpending, deathInCare, enableCoupleTracking, partner1, partner2, deathScenario, singleSpendingMultiplier]);
 
   const chartData = useMemo(() => {
     if (!simulationResults) return [];
-    return simulationResults.map((r: any) => ({
-      year: r.year, 
-      age: r.age,
-      'Total Balance': toDisplayValue(r.totalBalance, r.year, r.cpiRate),
-      'Main Super': toDisplayValue(r.mainSuper, r.year, r.cpiRate),
-      'Buffer': toDisplayValue(r.seqBuffer, r.year, r.cpiRate),
-      'Cash': toDisplayValue(r.cashAccount, r.year, r.cpiRate),
-      'Spending': toDisplayValue(r.spending, r.year, r.cpiRate),
-      'Income': toDisplayValue(r.income, r.year, r.cpiRate)
-    }));
-  }, [simulationResults, showNominalDollars, inflationRate]);
+    return simulationResults.map((r: any) => {
+      // Calculate individual partner ages if couple tracking enabled
+      let partner1Age = null;
+      let partner2Age = null;
+      if (enableCoupleTracking && pensionRecipientType === 'couple') {
+        // Calculate which partner retires first chronologically
+        const yearsUntilPartner1Retires = partner1.retirementAge - partner1.currentAge;
+        const yearsUntilPartner2Retires = partner2.retirementAge - partner2.currentAge;
+        const yearsUntilFirstRetirement = Math.min(yearsUntilPartner1Retires, yearsUntilPartner2Retires);
+        
+        const partner1AgeAtYear1 = partner1.currentAge + yearsUntilFirstRetirement;
+        const partner2AgeAtYear1 = partner2.currentAge + yearsUntilFirstRetirement;
+        partner1Age = partner1AgeAtYear1 + (r.year - 1);
+        partner2Age = partner2AgeAtYear1 + (r.year - 1);
+      }
+      
+      return {
+        year: r.year, 
+        age: r.age,
+        partner1Age,
+        partner2Age,
+        'Total Balance': toDisplayValue(r.totalBalance, r.year, r.cpiRate),
+        'Main Super': toDisplayValue(r.mainSuper, r.year, r.cpiRate),
+        'Buffer': toDisplayValue(r.seqBuffer, r.year, r.cpiRate),
+        'Cash': toDisplayValue(r.cashAccount, r.year, r.cpiRate),
+        'Spending': toDisplayValue(r.spending, r.year, r.cpiRate),
+        'Income': toDisplayValue(r.income, r.year, r.cpiRate)
+      };
+    });
+  }, [simulationResults, showNominalDollars, inflationRate, enableCoupleTracking, pensionRecipientType, partner1, partner2]);
 
   const pensionChartData = useMemo(() => {
     if (!simulationResults) return [];
-    return simulationResults.map((r: any) => ({
-      age: r.age,
-      'Age Pension': toDisplayValue(r.agePension, r.year, r.cpiRate),
-      'PSS/CSS Pension': toDisplayValue(r.pensionIncome, r.year, r.cpiRate),
-      'Total Income': toDisplayValue(r.income, r.year, r.cpiRate)
-    }));
-  }, [simulationResults, showNominalDollars, inflationRate]);
+    return simulationResults.map((r: any) => {
+      // Calculate individual partner ages if couple tracking enabled
+      let partner1Age = null;
+      let partner2Age = null;
+      if (enableCoupleTracking && pensionRecipientType === 'couple') {
+        // Calculate which partner retires first chronologically
+        const yearsUntilPartner1Retires = partner1.retirementAge - partner1.currentAge;
+        const yearsUntilPartner2Retires = partner2.retirementAge - partner2.currentAge;
+        const yearsUntilFirstRetirement = Math.min(yearsUntilPartner1Retires, yearsUntilPartner2Retires);
+        
+        const partner1AgeAtYear1 = partner1.currentAge + yearsUntilFirstRetirement;
+        const partner2AgeAtYear1 = partner2.currentAge + yearsUntilFirstRetirement;
+        partner1Age = partner1AgeAtYear1 + (r.year - 1);
+        partner2Age = partner2AgeAtYear1 + (r.year - 1);
+      }
+      
+      return {
+        year: r.year,
+        age: r.age,
+        partner1Age,
+        partner2Age,
+        'Age Pension': toDisplayValue(r.agePension, r.year, r.cpiRate),
+        'PSS/CSS Pension': toDisplayValue(r.pensionIncome, r.year, r.cpiRate),
+        'Total Income': toDisplayValue(r.income, r.year, r.cpiRate)
+      };
+    });
+  }, [simulationResults, showNominalDollars, inflationRate, enableCoupleTracking, pensionRecipientType, partner1, partner2]);
 
   const exportDetailedCSV = () => {
     if (!simulationResults || simulationResults.length === 0) {
@@ -1289,7 +1686,7 @@ const RetirementCalculator = () => {
     const hasSplurge = splurgeAmount > 0;
     const hasAgedCare = includeAgedCare;
     const hasDebt = includeDebt && debts.length > 0;
-    const hasPartnerTracking = pensionRecipientType === 'couple' && (includePartnerMortality || (hasAgedCare && deathInCare));
+    const hasCoupleTracking = pensionRecipientType === 'couple' && enableCoupleTracking;
     const isJPMorgan = spendingPattern === 'jpmorgan';
     
     // Detect if this is a health shock scenario (check if any year has health costs)
@@ -1307,7 +1704,13 @@ const RetirementCalculator = () => {
     let headers = [];
     
     // Core columns (always)
-    headers.push('Year', 'Age', 'Calendar Year');
+    headers.push('Year');
+    if (hasCoupleTracking) {
+      headers.push(`${partner1.name} Age`, `${partner2.name} Age`);
+    } else {
+      headers.push('Age');
+    }
+    headers.push('Calendar Year');
     
     // Starting balances (always)
     headers.push('Portfolio Start', 'Main Super Start', 'Buffer Start', 'Cash Start');
@@ -1323,7 +1726,15 @@ const RetirementCalculator = () => {
     headers.push('Total Spending');
     
     // Income calculation
-    if (totalPensionIncome > 0) headers.push('PSS/CSS Pension');
+    if (hasCoupleTracking) {
+      if (partner1.pensionIncome > 0) headers.push(`${partner1.name} Pension`);
+      if (partner2.pensionIncome > 0) headers.push(`${partner2.name} Pension`);
+      if (partner1.preRetirementIncome > 0) headers.push(`${partner1.name} Pre-Retirement Income`);
+      if (partner2.preRetirementIncome > 0) headers.push(`${partner2.name} Pre-Retirement Income`);
+      headers.push('PSS/CSS Pension Total');
+    } else {
+      if (totalPensionIncome > 0) headers.push('PSS/CSS Pension');
+    }
     if (includeAgePension) headers.push('Age Pension');
     headers.push('Total Income', 'Net Spending Need');
     
@@ -1341,7 +1752,7 @@ const RetirementCalculator = () => {
     // Status indicators
     if (useGuardrails) headers.push('Guardrail Status');
     if (hasAgedCare) headers.push('In Aged Care');
-    if (hasPartnerTracking) headers.push('Partner Alive');
+    if (hasCoupleTracking) headers.push('Partner Status');
     if (hasDebt) headers.push('Debt Balance');
     
     let csv = headers.join(',') + '\n';
@@ -1425,7 +1836,23 @@ const RetirementCalculator = () => {
       let row = [];
       
       // Core
-      row.push(r.year, r.age, calendarYear);
+      row.push(r.year);
+      if (hasCoupleTracking) {
+        // Calculate partner ages
+        const yearsUntilPartner1Retires = partner1.retirementAge - partner1.currentAge;
+        const yearsUntilPartner2Retires = partner2.retirementAge - partner2.currentAge;
+        const yearsUntilFirstRetirement = Math.min(yearsUntilPartner1Retires, yearsUntilPartner2Retires);
+        
+        const partner1AgeAtYear1 = partner1.currentAge + yearsUntilFirstRetirement;
+        const partner2AgeAtYear1 = partner2.currentAge + yearsUntilFirstRetirement;
+        const partner1Age = partner1AgeAtYear1 + (r.year - 1);
+        const partner2Age = partner2AgeAtYear1 + (r.year - 1);
+        
+        row.push(partner1Age, partner2Age);
+      } else {
+        row.push(r.age);
+      }
+      row.push(calendarYear);
       
       // Starting balances
       row.push(prevTotal.toFixed(2), prevMainSuper.toFixed(2), prevBuffer.toFixed(2), prevCash.toFixed(2));
@@ -1441,7 +1868,46 @@ const RetirementCalculator = () => {
       row.push(r.spending.toFixed(2));
       
       // Income
-      if (totalPensionIncome > 0) row.push((r.pensionIncome || 0).toFixed(2));
+      if (hasCoupleTracking) {
+        // Calculate individual partner incomes based on retirement status
+        const yearsUntilPartner1Retires = partner1.retirementAge - partner1.currentAge;
+        const yearsUntilPartner2Retires = partner2.retirementAge - partner2.currentAge;
+        const yearsUntilFirstRetirement = Math.min(yearsUntilPartner1Retires, yearsUntilPartner2Retires);
+        
+        const partner1AgeAtYear1 = partner1.currentAge + yearsUntilFirstRetirement;
+        const partner2AgeAtYear1 = partner2.currentAge + yearsUntilFirstRetirement;
+        const partner1Age = partner1AgeAtYear1 + (r.year - 1);
+        const partner2Age = partner2AgeAtYear1 + (r.year - 1);
+        
+        // Check if each partner is retired and add their income
+        if (partner1.pensionIncome > 0) {
+          const partner1Pension = partner1Age >= partner1.retirementAge ? 
+            (partner1.pensionIncome * Math.pow(1 + r.cpiRate / 100, r.year - 1)) : 0;
+          row.push(partner1Pension.toFixed(2));
+        }
+        if (partner2.pensionIncome > 0) {
+          const partner2Pension = partner2Age >= partner2.retirementAge ? 
+            (partner2.pensionIncome * Math.pow(1 + r.cpiRate / 100, r.year - 1)) : 0;
+          row.push(partner2Pension.toFixed(2));
+        }
+        
+        // Pre-retirement income (only if not yet retired)
+        if (partner1.preRetirementIncome > 0) {
+          const partner1PreRetirement = partner1Age < partner1.retirementAge ? 
+            (partner1.preRetirementIncome * Math.pow(1 + r.cpiRate / 100, r.year - 1)) : 0;
+          row.push(partner1PreRetirement.toFixed(2));
+        }
+        if (partner2.preRetirementIncome > 0) {
+          const partner2PreRetirement = partner2Age < partner2.retirementAge ? 
+            (partner2.preRetirementIncome * Math.pow(1 + r.cpiRate / 100, r.year - 1)) : 0;
+          row.push(partner2PreRetirement.toFixed(2));
+        }
+        
+        // Total PSS/CSS pension
+        row.push((r.pensionIncome || 0).toFixed(2));
+      } else {
+        if (totalPensionIncome > 0) row.push((r.pensionIncome || 0).toFixed(2));
+      }
       if (includeAgePension) row.push((r.agePension || 0).toFixed(2));
       row.push(r.income.toFixed(2), netSpendingNeed.toFixed(2));
       
@@ -1459,7 +1925,14 @@ const RetirementCalculator = () => {
       // Status
       if (useGuardrails) row.push(r.guardrailStatus || 'normal');
       if (hasAgedCare) row.push(r.inAgedCare ? 'TRUE' : 'FALSE');
-      if (hasPartnerTracking) row.push(r.partnerAlive !== undefined ? (r.partnerAlive ? 'TRUE' : 'FALSE') : 'N/A');
+      if (hasCoupleTracking) {
+        // Add partner status based on death scenario
+        if (deathScenario === 'both-alive') {
+          row.push('Both Alive');
+        } else {
+          row.push(r.partnerAlive !== undefined ? (r.partnerAlive ? 'Partner Alive' : 'Partner Deceased') : 'N/A');
+        }
+      }
       if (hasDebt) row.push(debtBalance.toFixed(2));
       
       csv += row.join(',') + '\n';
@@ -1788,8 +2261,74 @@ if (!isMounted) {
         
         <div className="bg-blue-50 border-l-4 border-blue-400 p-4">
           <h2 className="text-xl font-bold mb-3">Initial Situation</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
+          
+          {/* COMMON INPUTS - Always visible */}
+          <div className="mb-6">
+            <h3 className="font-semibold text-blue-900 mb-3">Household Parameters</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Base Annual Spending</label>
+                <input type="number" value={baseSpending} onChange={(e) => setBaseSpending(Number(e.target.value))} className="w-full p-2 border rounded" step="5000" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Sequencing Buffer
+                  <InfoTooltip text="Cash/defensive assets to cover early retirement years. Withdrawals follow: Cash → Buffer → Main Super. Earns 3% real return (defensive)." />
+                </label>
+                <input type="number" value={sequencingBuffer} onChange={(e) => setSequencingBuffer(Number(e.target.value))} className="w-full p-2 border rounded" step="10000" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  CPI / Inflation Rate (% per year)
+                  <InfoTooltip text="Annual inflation rate used for projections. Affects spending growth, pension indexation, and real returns. Australian long-term average is 2.5%." />
+                </label>
+                <input 
+                  type="number" 
+                  value={inflationRate} 
+                  onChange={(e) => setInflationRate(Number(e.target.value))} 
+                  className="w-full p-2 border rounded" 
+                  step="0.1"
+                  min="0"
+                  max="10"
+                />
+              </div>
+            </div>
+          </div>
+          
+          {/* Couple Tracking Toggle */}
+          {pensionRecipientType === 'couple' && (
+             <div className="mb-4 p-3 bg-white border border-blue-200 rounded">
+               <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enableCoupleTracking}
+                  onChange={(e) => {
+                    setEnableCoupleTracking(e.target.checked);
+                    // If enabling for first time, sync with current values
+                   if (e.target.checked && partner1.superBalance === 1360000) {
+                     setPartner1({
+                      ...partner1,
+                      currentAge,
+                      retirementAge,
+                      superBalance: mainSuperBalance,
+                     pensionIncome: totalPensionIncome,
+                   });
+               }
+           }}
+        className="mr-3"
+      />
+      <span className="font-medium text-blue-900">
+        Track partners individually
+      </span>
+      <InfoTooltip text="Enable separate tracking for each partner's super, pensions, retirement ages, and death scenarios." />
+    </label>
+  </div>
+)}
+   {/* Original Simple Inputs - only show when NOT tracking individually */}
+     {!(pensionRecipientType === 'couple' && enableCoupleTracking) && (
+      <div>
+        <div className="grid grid-cols-2 gap-4">
+             <div>
               <label className="block text-sm font-medium mb-1">
                 Main Super Balance
                 <InfoTooltip text="Your main superannuation invested in growth assets. Earns variable returns based on market performance." />
@@ -1798,39 +2337,13 @@ if (!isMounted) {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">
-                Sequencing Buffer
-                <InfoTooltip text="Cash/defensive assets to cover early retirement years. Withdrawals follow: Cash → Buffer → Main Super. Earns 3% real return (defensive)." />
-              </label>
-              <input type="number" value={sequencingBuffer} onChange={(e) => setSequencingBuffer(Number(e.target.value))} className="w-full p-2 border rounded" step="10000" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">
                 Pension Income (per year)
                 <InfoTooltip text="Your PSS/CSS/other defined benefit pension income. Indexed to inflation." />
               </label>
               <input type="number" value={totalPensionIncome} onChange={(e) => setTotalPensionIncome(Number(e.target.value))} className="w-full p-2 border rounded" step="5000" />
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Base Annual Spending</label>
-              <input type="number" value={baseSpending} onChange={(e) => setBaseSpending(Number(e.target.value))} className="w-full p-2 border rounded" step="5000" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                CPI / Inflation Rate (% per year)
-                <InfoTooltip text="Annual inflation rate used for projections. Affects spending growth, pension indexation, and real returns. Australian long-term average is 2.5%." />
-              </label>
-              <input 
-                type="number" 
-                value={inflationRate} 
-                onChange={(e) => setInflationRate(Number(e.target.value))} 
-                className="w-full p-2 border rounded" 
-                step="0.1"
-                min="0"
-                max="10"
-              />
-            </div>
           </div>
-          
+
           <div className="grid grid-cols-2 gap-4 mt-4">
             <div>
               <label className="block text-sm font-medium mb-1">
@@ -1867,8 +2380,89 @@ if (!isMounted) {
                     </option>
                   ))}
               </select>
+          </div>
+        </div>
+      </div>
+    )}
+    {/* NEW: Couple Tracking Panel */}
+         {pensionRecipientType === 'couple' && enableCoupleTracking && (
+          <CoupleTrackingPanel
+            partner1={partner1}
+            partner2={partner2}
+            onPartner1Change={setPartner1}
+            onPartner2Change={setPartner2}
+          />
+      )}
+      
+      {/* Death Scenario Selector */}
+      {pensionRecipientType === 'couple' && enableCoupleTracking && (
+        <div className="bg-amber-50 border border-amber-200 rounded p-4 mt-4">
+          <h3 className="font-bold mb-2 text-amber-900">Death Scenario Modeling</h3>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Scenario to Model
+                <InfoTooltip text="Model different death scenarios to see how the surviving partner's finances are affected. Super transfers to survivor, pensions reduce to reversionary rate." />
+              </label>
+              <select
+                value={deathScenario}
+                onChange={(e) => setDeathScenario(e.target.value as 'both-alive' | 'partner1-dies' | 'partner2-dies')}
+                className="w-full p-2 border rounded"
+              >
+                <option value="both-alive">Both Partners Alive (Base Case)</option>
+                <option value="partner1-dies">{partner1.name} Dies at Age {partner1.deathAge}</option>
+                <option value="partner2-dies">{partner2.name} Dies at Age {partner2.deathAge}</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Single Person Spending %
+                <InfoTooltip text="What percentage of couple spending does a single person need? Research suggests 60-70%. Default is 65%." />
+              </label>
+              <input
+                type="number"
+                value={singleSpendingMultiplier * 100}
+                onChange={(e) => setSingleSpendingMultiplier(Number(e.target.value) / 100)}
+                className="w-full p-2 border rounded"
+                min="50"
+                max="100"
+                step="5"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Single spending: {formatCurrency(baseSpending * singleSpendingMultiplier)}/year
+              </p>
             </div>
           </div>
+          
+          {deathScenario !== 'both-alive' && (
+            <div className="mt-3 p-3 bg-white border border-amber-300 rounded text-sm">
+              <p className="font-medium text-amber-900 mb-1">Scenario Effects:</p>
+              <ul className="list-disc list-inside space-y-1 text-gray-700">
+                {deathScenario === 'partner1-dies' && (
+                  <>
+                    <li>{partner1.name}'s super (${partner1.superBalance.toLocaleString()}) transfers to {partner2.name}</li>
+                    <li>{partner1.name}'s pension reduces to {partner1.reversionaryRate}% reversionary rate</li>
+                    <li>Spending reduces to {(singleSpendingMultiplier * 100).toFixed(0)}% ({formatCurrency(baseSpending * singleSpendingMultiplier)}/year)</li>
+                    <li>Age Pension changes from couple to single rate</li>
+                    <li>Projection continues from age {partner1.deathAge}</li>
+                  </>
+                )}
+                {deathScenario === 'partner2-dies' && (
+                  <>
+                    <li>{partner2.name}'s super (${partner2.superBalance.toLocaleString()}) transfers to {partner1.name}</li>
+                    <li>{partner2.name}'s pension reduces to {partner2.reversionaryRate}% reversionary rate</li>
+                    <li>Spending reduces to {(singleSpendingMultiplier * 100).toFixed(0)}% ({formatCurrency(baseSpending * singleSpendingMultiplier)}/year)</li>
+                    <li>Age Pension changes from couple to single rate</li>
+                    <li>Projection continues from age {partner2.deathAge}</li>
+                  </>
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
           <div className="grid grid-cols-2 gap-4 mt-4">
             <div>
@@ -1917,6 +2511,7 @@ if (!isMounted) {
             </div>
           )}
           
+          {!(pensionRecipientType === 'couple' && enableCoupleTracking) && (
           <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded">
             <h3 className="font-semibold text-gray-900 mb-2">Summary</h3>
             <div className="grid grid-cols-2 gap-4 text-sm">
@@ -1933,6 +2528,7 @@ if (!isMounted) {
               </div>
             </div>
           </div>
+          )}
           
           <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded text-xs text-gray-700">
             <div className="font-semibold mb-1">Withdrawal Strategy</div>
@@ -2003,12 +2599,12 @@ if (!isMounted) {
               {pensionChartData && pensionChartData.length > 0 && (
                 <div className="border-t pt-4">
                   <h3 className="text-lg font-semibold mb-3">Age Pension Over Time</h3>
-                  <ResponsiveContainer width="100%" height={250}>
+                  <ResponsiveContainer width="100%" height={280}>
                     <ComposedChart data={pensionChartData}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="age" label={{ value: 'Age', position: 'insideBottom', offset: -5 }} />
+                      <XAxis dataKey="year" label={{ value: 'Year', position: 'insideBottom', offset: -5 }} />
                       <YAxis tickFormatter={(val) => ((val as number)/1000).toFixed(0) + 'k'} />
-                      <Tooltip formatter={(val) => formatCurrency(val as number)} />
+                      <Tooltip content={<CustomChartTooltip enableCoupleTracking={enableCoupleTracking && pensionRecipientType === 'couple'} partner1Name={partner1.name} partner2Name={partner2.name} />} />
                       <Legend />
                       <Area type="monotone" dataKey="PSS/CSS Pension" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.6} />
                       <Area type="monotone" dataKey="Age Pension" stackId="1" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
@@ -2167,10 +2763,21 @@ if (!isMounted) {
 
         <div className="bg-white border p-4 rounded mb-6">
           <div className="flex justify-between items-center mb-3">
-            <h2 className="text-xl font-bold">
-              One-Off Expenses
-              <InfoTooltip text="Single large expenses in specific years (e.g., car purchase, home repairs, wedding). Not recurring." />
-            </h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-bold">
+                One-Off Expenses
+                <InfoTooltip text="Single large expenses in specific years (e.g., car purchase, home repairs, wedding). Not recurring." />
+              </h2>
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeOneOffExpenses}
+                  onChange={(e) => setIncludeOneOffExpenses(e.target.checked)}
+                  className="mr-2"
+                />
+                <span className="text-sm font-medium text-gray-700">Include in calculations</span>
+              </label>
+            </div>
             <button 
               onClick={() => setShowOneOffExpenses(!showOneOffExpenses)}
               className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -2864,9 +3471,9 @@ if (!isMounted) {
                 income: toDisplayValue(r.income, r.year, r.cpiRate)
               }))}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="age" label={{ value: 'Age', position: 'insideBottom', offset: -5 }} />
+                <XAxis dataKey="year" label={{ value: 'Year', position: 'insideBottom', offset: -5 }} />
                 <YAxis tickFormatter={(val) => ((val as number)/1000).toFixed(0) + 'k'} />
-                <Tooltip formatter={(val) => formatCurrency(val as number)} />
+                <Tooltip formatter={(val) => formatCurrency(val as number)} labelFormatter={(label) => `Year ${label}`} />
                 <Legend />
                 <Line type="monotone" dataKey="balance" name="Total Balance" stroke="#2563eb" strokeWidth={2} />
                 <Line type="monotone" dataKey="income" name="Income" stroke="#10b981" strokeWidth={1} />
@@ -3129,6 +3736,30 @@ if (!isMounted) {
 
         {chartData.length > 0 && (
           <div>
+            {/* Insufficient Funds Warning */}
+            {enableCoupleTracking && pensionRecipientType === 'couple' && simulationResults && simulationResults.some((r: any) => r.insufficientFunds) && (
+              <div className="bg-red-50 border border-red-300 rounded p-4 mb-6">
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl">⚠️</span>
+                  <div className="flex-1">
+                    <h3 className="font-bold text-red-900 mb-2">Insufficient Accessible Funds Warning</h3>
+                    <p className="text-red-800 mb-2">
+                      The simulation detected years where expenses could not be fully covered because:
+                    </p>
+                    <ul className="list-disc list-inside text-red-800 space-y-1 mb-3">
+                      <li>One or more partners have not yet retired and cannot access their superannuation</li>
+                      <li>The retired partner's super, sequencing buffer, and cash were insufficient</li>
+                      <li>Pre-retirement income plus pension income was not enough to cover household expenses</li>
+                    </ul>
+                    <p className="text-red-800 font-semibold">
+                      Consider: (1) Increase pre-retirement income, (2) Reduce spending until both partners retire, 
+                      (3) Increase the retired partner's super balance, or (4) Adjust retirement ages.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             {/* Aged Care Active Banner */}
             {includeAgedCare && (
               <div className="bg-purple-50 border-l-4 border-purple-500 p-3 mb-4">
@@ -3201,9 +3832,9 @@ if (!isMounted) {
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="age" />
+                  <XAxis dataKey="year" label={{ value: 'Year', position: 'insideBottom', offset: -5 }} />
                   <YAxis tickFormatter={(val) => ((val as number)/1000).toFixed(0) + 'k'} />
-                  <Tooltip formatter={(val) => formatCurrency(val as number)} />
+                  <Tooltip content={<CustomChartTooltip enableCoupleTracking={enableCoupleTracking && pensionRecipientType === 'couple'} partner1Name={partner1.name} partner2Name={partner2.name} />} />
                   <Legend />
                   <Line type="monotone" dataKey="Total Balance" stroke="#2563eb" strokeWidth={3} />
                   <Line type="monotone" dataKey="Main Super" stroke="#10b981" strokeWidth={2} />
@@ -3238,9 +3869,9 @@ if (!isMounted) {
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="age" />
+                  <XAxis dataKey="year" label={{ value: 'Year', position: 'insideBottom', offset: -5 }} />
                   <YAxis tickFormatter={(val) => ((val as number)/1000).toFixed(0) + 'k'} />
-                  <Tooltip formatter={(val) => formatCurrency(val as number)} />
+                  <Tooltip content={<CustomChartTooltip enableCoupleTracking={enableCoupleTracking && pensionRecipientType === 'couple'} partner1Name={partner1.name} partner2Name={partner2.name} />} />
                   <Legend />
                   <Line type="monotone" dataKey="Income" stroke="#10b981" strokeWidth={2} />
                   <Line type="monotone" dataKey="Spending" stroke="#ef4444" strokeWidth={2} />
