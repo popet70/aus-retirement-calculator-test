@@ -189,6 +189,21 @@ const RetirementCalculator = () => {
     const yearsUntilRetirement = retAge - currentAge;
     return currentYear + yearsUntilRetirement;
   };
+  
+  // Calculate calendar year for any simulation year
+  const getCalendarYear = (simulationYear: number) => {
+    if (enableCoupleTracking && pensionRecipientType === 'couple') {
+      // Year 1 = first retirement
+      const yearsUntilPartner1Retires = partner1.retirementAge - partner1.currentAge;
+      const yearsUntilPartner2Retires = partner2.retirementAge - partner2.currentAge;
+      const yearsUntilFirstRetirement = Math.min(yearsUntilPartner1Retires, yearsUntilPartner2Retires);
+      const firstRetirementYear = 2026 + yearsUntilFirstRetirement;
+      return firstRetirementYear + (simulationYear - 1);
+    } else {
+      // Simple mode
+      return getRetirementYear(retirementAge) + (simulationYear - 1);
+    }
+  };
 
   const historicalReturns = {
     gfc2008: [-37,26,15,2,16,32,14,1,12,22,-4,29,19,31,-18,27,16,21,12,26,18,22,15,28,8,18,12,20,15,18,17,16,18,17,18],
@@ -1721,8 +1736,11 @@ const RetirementCalculator = () => {
         partner2Age = partner2AgeAtYear1 + (r.year - 1);
       }
       
+      const calendarYear = getCalendarYear(r.year);
+      
       return {
-        year: r.year, 
+        year: r.year,
+        calendarYear,
         age: r.age,
         partner1Age,
         partner2Age,
@@ -1754,8 +1772,11 @@ const RetirementCalculator = () => {
         partner2Age = partner2AgeAtYear1 + (r.year - 1);
       }
       
+      const calendarYear = getCalendarYear(r.year);
+      
       return {
         year: r.year,
+        calendarYear,
         age: r.age,
         partner1Age,
         partner2Age,
@@ -2142,7 +2163,7 @@ if (!isMounted) {
   <div className="flex justify-between items-start mb-4">
     <div>
       <h1 className="text-3xl font-bold text-gray-800 mb-2">Australian Retirement Planning Tool</h1>
-      <p className="text-gray-600">Version 14.9 - Splurge Ramp-Down Feature</p>
+      <p className="text-gray-600">Version 15 - Individual Partner Tracking</p>
     </div>
     <div className="text-right">
       <label className="block text-sm font-medium text-gray-700 mb-2">Display Values</label>
@@ -2328,7 +2349,7 @@ if (!isMounted) {
               <div className="flex gap-2 justify-center">
                 <button 
                   onClick={() => {
-                    window.open('https://github.com/popet70/retirement-calculator/raw/main/docs/Retirement_Calculator_User_Guide_v14_9.pdf', '_blank');
+                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_0.pdf', '_blank');
                   }}
                   className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
                 >
@@ -2336,7 +2357,7 @@ if (!isMounted) {
                 </button>
                 <button 
                   onClick={() => {
-                    window.open('https://github.com/popet70/retirement-calculator/raw/main/docs/Retirement_Calculator_User_Guide_v14_9.docx', '_blank');
+                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_0.docx', '_blank');
                   }}
                   className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm font-medium"
                 >
@@ -2732,7 +2753,7 @@ if (!isMounted) {
                   <ResponsiveContainer width="100%" height={280}>
                     <ComposedChart data={pensionChartData}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="year" label={{ value: 'Year', position: 'insideBottom', offset: -5 }} />
+                      <XAxis dataKey="calendarYear" label={{ value: 'Year', position: 'insideBottom', offset: -5 }} />
                       <YAxis tickFormatter={(val) => ((val as number)/1000).toFixed(0) + 'k'} />
                       <Tooltip content={<CustomChartTooltip enableCoupleTracking={enableCoupleTracking && pensionRecipientType === 'couple'} partner1Name={partner1.name} partner2Name={partner2.name} />} />
                       <Legend />
@@ -3616,7 +3637,7 @@ if (!isMounted) {
                 income: toDisplayValue(r.income, r.year, r.cpiRate)
               }))}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="year" label={{ value: 'Year', position: 'insideBottom', offset: -5 }} />
+                <XAxis dataKey="calendarYear" label={{ value: 'Year', position: 'insideBottom', offset: -5 }} />
                 <YAxis tickFormatter={(val) => ((val as number)/1000).toFixed(0) + 'k'} />
                 <Tooltip formatter={(val) => formatCurrency(val as number)} labelFormatter={(label) => `Year ${label}`} />
                 <Legend />
@@ -3977,7 +3998,7 @@ if (!isMounted) {
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="year" label={{ value: 'Year', position: 'insideBottom', offset: -5 }} />
+                  <XAxis dataKey="calendarYear" label={{ value: 'Year', position: 'insideBottom', offset: -5 }} />
                   <YAxis tickFormatter={(val) => ((val as number)/1000).toFixed(0) + 'k'} />
                   <Tooltip content={<CustomChartTooltip enableCoupleTracking={enableCoupleTracking && pensionRecipientType === 'couple'} partner1Name={partner1.name} partner2Name={partner2.name} />} />
                   <Legend />
@@ -4014,7 +4035,7 @@ if (!isMounted) {
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="year" label={{ value: 'Year', position: 'insideBottom', offset: -5 }} />
+                  <XAxis dataKey="calendarYear" label={{ value: 'Year', position: 'insideBottom', offset: -5 }} />
                   <YAxis tickFormatter={(val) => ((val as number)/1000).toFixed(0) + 'k'} />
                   <Tooltip content={<CustomChartTooltip enableCoupleTracking={enableCoupleTracking && pensionRecipientType === 'couple'} partner1Name={partner1.name} partner2Name={partner2.name} />} />
                   <Legend />

@@ -2163,7 +2163,7 @@ if (!isMounted) {
   <div className="flex justify-between items-start mb-4">
     <div>
       <h1 className="text-3xl font-bold text-gray-800 mb-2">Australian Retirement Planning Tool</h1>
-      <p className="text-gray-600">Version 15 - Individual Partner Tracking</p>
+      <p className="text-gray-600">Version 14.9 - Splurge Ramp-Down Feature</p>
     </div>
     <div className="text-right">
       <label className="block text-sm font-medium text-gray-700 mb-2">Display Values</label>
@@ -2349,7 +2349,7 @@ if (!isMounted) {
               <div className="flex gap-2 justify-center">
                 <button 
                   onClick={() => {
-                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_0.pdf', '_blank');
+                    window.open('https://github.com/popet70/retirement-calculator/raw/main/docs/Retirement_Calculator_User_Guide_v15_0.pdf', '_blank');
                   }}
                   className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
                 >
@@ -2357,7 +2357,7 @@ if (!isMounted) {
                 </button>
                 <button 
                   onClick={() => {
-                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_0.docx', '_blank');
+                    window.open('https://github.com/popet70/retirement-calculator/raw/main/docs/Retirement_Calculator_User_Guide_v15_0.docx', '_blank');
                   }}
                   className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm font-medium"
                 >
@@ -2559,6 +2559,7 @@ if (!isMounted) {
                     <li>Spending reduces to {(singleSpendingMultiplier * 100).toFixed(0)}% ({formatCurrency(baseSpending * singleSpendingMultiplier)}/year)</li>
                     <li>Age Pension changes from couple to single rate</li>
                     <li>Projection continues from age {partner1.deathAge}</li>
+                    {includeAgedCare && <li className="text-blue-700 font-medium">✓ {partner2.name} may enter aged care at age {deterministicAgedCareAge}</li>}
                   </>
                 )}
                 {deathScenario === 'partner2-dies' && (
@@ -2568,6 +2569,7 @@ if (!isMounted) {
                     <li>Spending reduces to {(singleSpendingMultiplier * 100).toFixed(0)}% ({formatCurrency(baseSpending * singleSpendingMultiplier)}/year)</li>
                     <li>Age Pension changes from couple to single rate</li>
                     <li>Projection continues from age {partner2.deathAge}</li>
+                    {includeAgedCare && <li className="text-blue-700 font-medium">✓ {partner1.name} may enter aged care at age {deterministicAgedCareAge}</li>}
                   </>
                 )}
               </ul>
@@ -3050,6 +3052,11 @@ if (!isMounted) {
             {enableCoupleTracking && (
               <div className="mt-2 text-xs text-blue-700 bg-blue-50 p-2 rounded">
                 ℹ️ <strong>Couple Mode:</strong> Aged care costs apply to the surviving partner only. The model assumes both partners remain healthy while both are alive, and the survivor may enter aged care at the specified age.
+              </div>
+            )}
+            {enableCoupleTracking && includeAgedCare && deathScenario === 'both-alive' && (
+              <div className="mt-2 text-xs text-amber-700 bg-amber-50 p-2 rounded border border-amber-200">
+                ⚠️ <strong>Action Required:</strong> To see aged care costs, you must select a death scenario below. Aged care only applies to the surviving partner after the first partner dies.
               </div>
             )}
           </div>
@@ -4048,7 +4055,7 @@ if (!isMounted) {
         )}
 
        <div className="text-center text-sm text-gray-600 mt-6">
-         Australian Retirement Planning Tool v14.9 ·{' '}
+         Australian Retirement Planning Tool v15.0 ·{' '}
          <a
            href="mailto:aust-retirement-calculator@proton.me"
            className="underline"
