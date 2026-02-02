@@ -2163,7 +2163,7 @@ if (!isMounted) {
   <div className="flex justify-between items-start mb-4">
     <div>
       <h1 className="text-3xl font-bold text-gray-800 mb-2">Australian Retirement Planning Tool</h1>
-      <p className="text-gray-600">Version 14.9 - Splurge Ramp-Down Feature</p>
+      <p className="text-gray-600">Version 15 - Individual Partner Tracking</p>
     </div>
     <div className="text-right">
       <label className="block text-sm font-medium text-gray-700 mb-2">Display Values</label>
