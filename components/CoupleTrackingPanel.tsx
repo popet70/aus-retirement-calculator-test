@@ -83,7 +83,7 @@ export function CoupleTrackingPanel({
           <div>
             <label className="block text-sm font-medium mb-1">
               Current Age
-              <InfoTooltip text="Partner's age today" />
+              <InfoTooltip text="Partner's age today (Year 1 of simulation starts when first partner retires)" />
             </label>
             <input
               type="number"
@@ -115,7 +115,7 @@ export function CoupleTrackingPanel({
           <div>
             <label className="block text-sm font-medium mb-1">
               Super Balance
-              <InfoTooltip text="Current superannuation balance for this partner" />
+              <InfoTooltip text="This partner's superannuation balance at their retirement age (not current balance if still working)" />
             </label>
             <input
               type="number"
@@ -131,7 +131,7 @@ export function CoupleTrackingPanel({
           <div>
             <label className="block text-sm font-medium mb-1">
               Retirement Age
-              <InfoTooltip text="Age when this partner retires and starts drawing super" />
+              <InfoTooltip text="Age when this partner retires and starts drawing super. Year 1 of the simulation starts when the first partner retires." />
             </label>
             <input
               type="number"
@@ -147,7 +147,7 @@ export function CoupleTrackingPanel({
           <div>
             <label className="block text-sm font-medium mb-1">
               PSS/CSS Pension (annual)
-              <InfoTooltip text="Defined benefit pension income per year for this partner" />
+              <InfoTooltip text="Annual defined benefit pension for this partner starting from their retirement age. Automatically indexed to inflation." />
             </label>
             <input
               type="number"
