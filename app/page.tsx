@@ -1159,9 +1159,9 @@ const RetirementCalculator = () => {
         if (partner1Eligible && partner2Eligible) {
           // Both eligible: Use couple rate (combined)
           let assetTestPension = activePensionParams.maxPensionPerYear * Math.pow(1 + cpiRate / 100, year - 1);
-          const indexedThreshold = activePensionParams.threshold * Math.pow(1 + cpiRate / 100, year - 1);
-          const indexedCutoff = activePensionParams.cutoff * Math.pow(1 + cpiRate / 100, year - 1);
-          const indexedTaper = activePensionParams.taper;
+          const indexedThreshold = (isHomeowner ? activePensionParams.assetTestThresholdHomeowner : activePensionParams.assetTestThresholdNonHomeowner) * Math.pow(1 + cpiRate / 100, year - 1);
+          const indexedCutoff = (isHomeowner ? activePensionParams.assetTestCutoffHomeowner : activePensionParams.assetTestCutoffNonHomeowner) * Math.pow(1 + cpiRate / 100, year - 1);
+          const indexedTaper = activePensionParams.assetTaperPerYear;
           
           if (totalAssets > indexedThreshold) {
             const excess = totalAssets - indexedThreshold;
@@ -1183,18 +1183,20 @@ const RetirementCalculator = () => {
           // Only one eligible: Use single rate for that partner
           const singleRateParams = {
             maxPensionPerYear: 29754,  // Single rate
-            threshold: isHomeowner ? 314000 : 566000,
-            cutoff: isHomeowner ? 695250 : 947250,
-            taper: 3.00,  // $3 per $1000
+            assetTestThresholdHomeowner: 314000,
+            assetTestThresholdNonHomeowner: 566000,
+            assetTestCutoffHomeowner: 695250,
+            assetTestCutoffNonHomeowner: 947250,
+            assetTaperPerYear: 3.00,  // $3 per $1000
             incomeTestFreeArea: 212,
             incomeTaperRate: 0.50,
             eligibilityAge: 67
           };
           
           let assetTestPension = singleRateParams.maxPensionPerYear * Math.pow(1 + cpiRate / 100, year - 1);
-          const indexedThreshold = singleRateParams.threshold * Math.pow(1 + cpiRate / 100, year - 1);
-          const indexedCutoff = singleRateParams.cutoff * Math.pow(1 + cpiRate / 100, year - 1);
-          const indexedTaper = singleRateParams.taper;
+          const indexedThreshold = (isHomeowner ? singleRateParams.assetTestThresholdHomeowner : singleRateParams.assetTestThresholdNonHomeowner) * Math.pow(1 + cpiRate / 100, year - 1);
+          const indexedCutoff = (isHomeowner ? singleRateParams.assetTestCutoffHomeowner : singleRateParams.assetTestCutoffNonHomeowner) * Math.pow(1 + cpiRate / 100, year - 1);
+          const indexedTaper = singleRateParams.assetTaperPerYear;
           
           if (totalAssets > indexedThreshold) {
             const excess = totalAssets - indexedThreshold;
@@ -1222,9 +1224,9 @@ const RetirementCalculator = () => {
           
         if (includeAgePension && anyoneAlive && age >= activePensionParams.eligibilityAge) {
           const indexedMaxPension = activePensionParams.maxPensionPerYear * Math.pow(1 + cpiRate / 100, year - 1);
-          const indexedThreshold = activePensionParams.threshold * Math.pow(1 + cpiRate / 100, year - 1);
-          const indexedCutoff = activePensionParams.cutoff * Math.pow(1 + cpiRate / 100, year - 1);
-          const indexedTaper = activePensionParams.taper;
+          const indexedThreshold = (isHomeowner ? activePensionParams.assetTestThresholdHomeowner : activePensionParams.assetTestThresholdNonHomeowner) * Math.pow(1 + cpiRate / 100, year - 1);
+          const indexedCutoff = (isHomeowner ? activePensionParams.assetTestCutoffHomeowner : activePensionParams.assetTestCutoffNonHomeowner) * Math.pow(1 + cpiRate / 100, year - 1);
+          const indexedTaper = activePensionParams.assetTaperPerYear;
           
           let assetTestPension = indexedMaxPension;
           if (totalAssets > indexedThreshold) {
@@ -3267,7 +3269,7 @@ const RetirementCalculator = () => {
                       </div>
                       
                       <div className="text-xs text-gray-600 p-2 bg-yellow-50 rounded border border-yellow-200">
-                        <strong>Asset Test:</strong> Pension reduces as total assets exceed {formatCurrency(agePensionParams.threshold)} ({isHomeowner ? 'homeowner' : 'non-homeowner'})
+                        <strong>Asset Test:</strong> Pension reduces as total assets exceed {formatCurrency(isHomeowner ? agePensionParams.assetTestThresholdHomeowner : agePensionParams.assetTestThresholdNonHomeowner)} ({isHomeowner ? 'homeowner' : 'non-homeowner'})
                         <br />
                         <strong>Income Test:</strong> Pension reduces for income over {formatCurrency(agePensionParams.incomeTestFreeArea)}/year
                       </div>
