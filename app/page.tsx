@@ -104,6 +104,7 @@ const RetirementCalculator = () => {
   const [includeOneOffExpenses, setIncludeOneOffExpenses] = useState(true); // Toggle to enable/disable
   const [showOneOffExpenses, setShowOneOffExpenses] = useState(true);
   const [showPensionSummary, setShowPensionSummary] = useState(true);
+  const [showPensionDetails, setShowPensionDetails] = useState(false);
   const [currentAge, setCurrentAge] = useState(55);
   const [retirementAge, setRetirementAge] = useState(60);
   const [pensionRecipientType, setPensionRecipientType] = useState<'single' | 'couple'>('couple');
@@ -1149,28 +1150,99 @@ const RetirementCalculator = () => {
       const indexedPensionIncome = currentPensionIncome * Math.pow(1 + cpiRate / 100, year - 1);
       
       let agePension = 0;
-      // Check if anyone is alive to receive age pension
-      const anyoneAlive = enableCoupleTracking && pensionRecipientType === 'couple'
-        ? (partner1Alive || partner2Alive)
-        : true; // In simple mode, assume alive
+      
+      // For couple tracking: Calculate age pension based on individual partner eligibility
+      if (includeAgePension && enableCoupleTracking && pensionRecipientType === 'couple') {
+        const partner1Eligible = partner1Alive && partner1CurrentAge >= activePensionParams.eligibilityAge;
+        const partner2Eligible = partner2Alive && partner2CurrentAge >= activePensionParams.eligibilityAge;
         
-      if (includeAgePension && anyoneAlive && age >= activePensionParams.eligibilityAge) {
-        let assetTestPension = indexedMaxPension;
-        if (totalAssets > indexedThreshold) {
-          const excess = totalAssets - indexedThreshold;
-          const reduction = Math.floor(excess / 1000) * (indexedTaper / Math.pow(1 + cpiRate / 100, year - 1)) * Math.pow(1 + cpiRate / 100, year - 1);
-          assetTestPension = Math.max(0, indexedMaxPension - reduction);
-        }
-        if (totalAssets >= indexedCutoff) assetTestPension = 0;
+        if (partner1Eligible && partner2Eligible) {
+          // Both eligible: Use couple rate (combined)
+          let assetTestPension = activePensionParams.maxPensionPerYear * Math.pow(1 + cpiRate / 100, year - 1);
+          const indexedThreshold = activePensionParams.threshold * Math.pow(1 + cpiRate / 100, year - 1);
+          const indexedCutoff = activePensionParams.cutoff * Math.pow(1 + cpiRate / 100, year - 1);
+          const indexedTaper = activePensionParams.taper;
+          
+          if (totalAssets > indexedThreshold) {
+            const excess = totalAssets - indexedThreshold;
+            const reduction = Math.floor(excess / 1000) * (indexedTaper / Math.pow(1 + cpiRate / 100, year - 1)) * Math.pow(1 + cpiRate / 100, year - 1);
+            assetTestPension = Math.max(0, assetTestPension - reduction);
+          }
+          if (totalAssets >= indexedCutoff) assetTestPension = 0;
 
-        const indexedIncomeTestFreeArea = activePensionParams.incomeTestFreeArea * Math.pow(1 + cpiRate / 100, year - 1);
-        let incomeTestPension = indexedMaxPension;
-        if (indexedPensionIncome > indexedIncomeTestFreeArea) {
-          const excessIncome = indexedPensionIncome - indexedIncomeTestFreeArea;
-          const reduction = excessIncome * activePensionParams.incomeTaperRate;
-          incomeTestPension = Math.max(0, indexedMaxPension - reduction);
+          const indexedIncomeTestFreeArea = activePensionParams.incomeTestFreeArea * Math.pow(1 + cpiRate / 100, year - 1);
+          let incomeTestPension = activePensionParams.maxPensionPerYear * Math.pow(1 + cpiRate / 100, year - 1);
+          if (indexedPensionIncome > indexedIncomeTestFreeArea) {
+            const excessIncome = indexedPensionIncome - indexedIncomeTestFreeArea;
+            const reduction = excessIncome * activePensionParams.incomeTaperRate;
+            incomeTestPension = Math.max(0, incomeTestPension - reduction);
+          }
+          agePension = Math.min(assetTestPension, incomeTestPension);
+          
+        } else if (partner1Eligible || partner2Eligible) {
+          // Only one eligible: Use single rate for that partner
+          const singleRateParams = {
+            maxPensionPerYear: 29754,  // Single rate
+            threshold: isHomeowner ? 314000 : 566000,
+            cutoff: isHomeowner ? 695250 : 947250,
+            taper: 3.00,  // $3 per $1000
+            incomeTestFreeArea: 212,
+            incomeTaperRate: 0.50,
+            eligibilityAge: 67
+          };
+          
+          let assetTestPension = singleRateParams.maxPensionPerYear * Math.pow(1 + cpiRate / 100, year - 1);
+          const indexedThreshold = singleRateParams.threshold * Math.pow(1 + cpiRate / 100, year - 1);
+          const indexedCutoff = singleRateParams.cutoff * Math.pow(1 + cpiRate / 100, year - 1);
+          const indexedTaper = singleRateParams.taper;
+          
+          if (totalAssets > indexedThreshold) {
+            const excess = totalAssets - indexedThreshold;
+            const reduction = Math.floor(excess / 1000) * (indexedTaper / Math.pow(1 + cpiRate / 100, year - 1)) * Math.pow(1 + cpiRate / 100, year - 1);
+            assetTestPension = Math.max(0, assetTestPension - reduction);
+          }
+          if (totalAssets >= indexedCutoff) assetTestPension = 0;
+
+          const indexedIncomeTestFreeArea = singleRateParams.incomeTestFreeArea * Math.pow(1 + cpiRate / 100, year - 1);
+          let incomeTestPension = singleRateParams.maxPensionPerYear * Math.pow(1 + cpiRate / 100, year - 1);
+          if (indexedPensionIncome > indexedIncomeTestFreeArea) {
+            const excessIncome = indexedPensionIncome - indexedIncomeTestFreeArea;
+            const reduction = excessIncome * singleRateParams.incomeTaperRate;
+            incomeTestPension = Math.max(0, incomeTestPension - reduction);
+          }
+          agePension = Math.min(assetTestPension, incomeTestPension);
         }
-        agePension = Math.min(assetTestPension, incomeTestPension);
+        // else: neither eligible, agePension stays 0
+        
+      } else {
+        // Non-couple or legacy mode: Use simple eligibility check
+        const anyoneAlive = enableCoupleTracking && pensionRecipientType === 'couple'
+          ? (partner1Alive || partner2Alive)
+          : true; // In simple mode, assume alive
+          
+        if (includeAgePension && anyoneAlive && age >= activePensionParams.eligibilityAge) {
+          const indexedMaxPension = activePensionParams.maxPensionPerYear * Math.pow(1 + cpiRate / 100, year - 1);
+          const indexedThreshold = activePensionParams.threshold * Math.pow(1 + cpiRate / 100, year - 1);
+          const indexedCutoff = activePensionParams.cutoff * Math.pow(1 + cpiRate / 100, year - 1);
+          const indexedTaper = activePensionParams.taper;
+          
+          let assetTestPension = indexedMaxPension;
+          if (totalAssets > indexedThreshold) {
+            const excess = totalAssets - indexedThreshold;
+            const reduction = Math.floor(excess / 1000) * (indexedTaper / Math.pow(1 + cpiRate / 100, year - 1)) * Math.pow(1 + cpiRate / 100, year - 1);
+            assetTestPension = Math.max(0, indexedMaxPension - reduction);
+          }
+          if (totalAssets >= indexedCutoff) assetTestPension = 0;
+
+          const indexedIncomeTestFreeArea = activePensionParams.incomeTestFreeArea * Math.pow(1 + cpiRate / 100, year - 1);
+          let incomeTestPension = indexedMaxPension;
+          if (indexedPensionIncome > indexedIncomeTestFreeArea) {
+            const excessIncome = indexedPensionIncome - indexedIncomeTestFreeArea;
+            const reduction = excessIncome * activePensionParams.incomeTaperRate;
+            incomeTestPension = Math.max(0, indexedMaxPension - reduction);
+          }
+          agePension = Math.min(assetTestPension, incomeTestPension);
+        }
       }
       
       // Inflate pre-retirement income (if any)
@@ -1450,6 +1522,31 @@ const RetirementCalculator = () => {
         yearReturn, cpiRate, guardrailStatus, currentSpendingBase,
         inAgedCare, agedCareAnnualCost: agedCareCosts.annualCost, radWithdrawn, radRefund,
         partnerAlive,
+        partner1Super, // Individual partner 1 super balance
+        partner2Super, // Individual partner 2 super balance
+        // Partner pension = private pension (only if retired) + age pension allocation
+        partner1Pension: enableCoupleTracking && partner1Alive ? (
+          (partner1CurrentAge >= partner1.retirementAge ? partner1.pensionIncome * Math.pow(1 + cpiRate / 100, year - 1) : 0) + 
+          // Age pension allocation based on eligibility
+          (() => {
+            const partner1Eligible = partner1CurrentAge >= activePensionParams.eligibilityAge;
+            const partner2Eligible = partner2Alive && partner2CurrentAge >= activePensionParams.eligibilityAge;
+            if (partner1Eligible && partner2Eligible) return agePension / 2; // Both eligible: split 50/50
+            if (partner1Eligible && !partner2Eligible) return agePension; // Only partner1 eligible: gets full single rate
+            return 0; // Not eligible yet
+          })()
+        ) : 0,
+        partner2Pension: enableCoupleTracking && partner2Alive ? (
+          (partner2CurrentAge >= partner2.retirementAge ? partner2.pensionIncome * Math.pow(1 + cpiRate / 100, year - 1) : 0) + 
+          // Age pension allocation based on eligibility
+          (() => {
+            const partner1Eligible = partner1Alive && partner1CurrentAge >= activePensionParams.eligibilityAge;
+            const partner2Eligible = partner2CurrentAge >= activePensionParams.eligibilityAge;
+            if (partner1Eligible && partner2Eligible) return agePension / 2; // Both eligible: split 50/50
+            if (partner2Eligible && !partner1Eligible) return agePension; // Only partner2 eligible: gets full single rate
+            return 0; // Not eligible yet
+          })()
+        ) : 0,
         debtBalance: totalDebtBalance,
         debtPayment: totalDebtPayment,
         debtInterestPaid: totalDebtInterest,
@@ -1994,7 +2091,11 @@ const RetirementCalculator = () => {
         'Buffer': toDisplayValue(r.seqBuffer, r.year, r.cpiRate),
         'Cash': toDisplayValue(r.cashAccount, r.year, r.cpiRate),
         'Spending': toDisplayValue(r.spending, r.year, r.cpiRate),
-        'Income': toDisplayValue(r.income, r.year, r.cpiRate)
+        'Income': toDisplayValue(r.income, r.year, r.cpiRate),
+        'Partner 1 Super': toDisplayValue(r.partner1Super || 0, r.year, r.cpiRate),
+        'Partner 2 Super': toDisplayValue(r.partner2Super || 0, r.year, r.cpiRate),
+        'Partner 1 Pension': toDisplayValue(r.partner1Pension || 0, r.year, r.cpiRate),
+        'Partner 2 Pension': toDisplayValue(r.partner2Pension || 0, r.year, r.cpiRate)
       };
     });
   }, [simulationResults, showNominalDollars, inflationRate, enableCoupleTracking, pensionRecipientType, partner1, partner2]);
@@ -3045,6 +3146,165 @@ const RetirementCalculator = () => {
               </div>
             </div>
           )}
+          
+          {/* Collapsible Pension Details Summary */}
+          <div className="mt-4 border rounded-lg overflow-hidden">
+            <button
+              onClick={() => setShowPensionDetails(!showPensionDetails)}
+              className="w-full px-4 py-3 bg-gradient-to-r from-blue-50 to-purple-50 hover:from-blue-100 hover:to-purple-100 flex items-center justify-between font-semibold text-gray-800 transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                📋 Pension Income Summary
+                {enableCoupleTracking && pensionRecipientType === 'couple' && (
+                  <span className="text-xs font-normal text-gray-600">(Both Partners)</span>
+                )}
+              </span>
+              <span className="text-xl">{showPensionDetails ? '−' : '+'}</span>
+            </button>
+            
+            {showPensionDetails && (
+              <div className="p-4 bg-white border-t space-y-4">
+                {/* Private Pension Section */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                    💼 Private Pension Income
+                    <InfoTooltip text="PSS/CSS or other defined benefit pensions. Set to $0 if you don't have one." />
+                  </h4>
+                  
+                  {enableCoupleTracking && pensionRecipientType === 'couple' ? (
+                    <div className="space-y-2 text-sm">
+                      <div className="grid grid-cols-2 gap-4 p-3 bg-blue-50 rounded">
+                        <div>
+                          <div className="font-medium text-blue-900">{partner1.name}</div>
+                          <div className="text-gray-700">
+                            <span className="font-semibold">{formatCurrency(partner1.pensionIncome)}/year</span>
+                            {partner1.pensionIncome > 0 && (
+                              <div className="text-xs text-gray-600 mt-1">
+                                Indexed to inflation annually
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-medium text-pink-900">{partner2.name}</div>
+                          <div className="text-gray-700">
+                            <span className="font-semibold">{formatCurrency(partner2.pensionIncome)}/year</span>
+                            {partner2.pensionIncome > 0 && (
+                              <div className="text-xs text-gray-600 mt-1">
+                                Indexed to inflation annually
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-600 p-2 bg-yellow-50 rounded border border-yellow-200">
+                        <strong>Note:</strong> Reversionary pensions ({(pensionReversionary * 100).toFixed(0)}%) continue to surviving partner at death
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm p-3 bg-blue-50 rounded">
+                      <div className="font-semibold text-blue-900">{formatCurrency(totalPensionIncome)}/year</div>
+                      {totalPensionIncome > 0 && (
+                        <div className="text-xs text-gray-600 mt-1">
+                          Indexed to inflation annually
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Age Pension Section */}
+                {includeAgePension && (
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                      🏛️ Age Pension (Government)
+                      <InfoTooltip text="Asset and income tested government payment. Reduces as wealth increases." />
+                    </h4>
+                    
+                    <div className="space-y-2 text-sm">
+                      <div className="p-3 bg-green-50 rounded space-y-2">
+                        <div>
+                          <span className="font-medium">Eligibility Age:</span> {agePensionParams.eligibilityAge}
+                        </div>
+                        <div>
+                          <span className="font-medium">Maximum Payment:</span> {formatCurrency(agePensionParams.maxPensionPerYear)}/year
+                          {pensionRecipientType === 'couple' && <span className="text-gray-600"> (combined)</span>}
+                        </div>
+                        <div>
+                          <span className="font-medium">Pension Type:</span> {pensionRecipientType === 'couple' ? 'Couple (combined)' : 'Single'}
+                        </div>
+                        
+                        {enableCoupleTracking && pensionRecipientType === 'couple' && (
+                          <div className="mt-2 pt-2 border-t border-green-200">
+                            <div className="font-medium mb-1">Individual Eligibility:</div>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div className="p-2 bg-white rounded">
+                                <div className="font-medium text-blue-900">{partner1.name}</div>
+                                <div>Eligible at age {agePensionParams.eligibilityAge}</div>
+                                <div className="text-gray-600">
+                                  (Year {Math.max(1, agePensionParams.eligibilityAge - partner1.currentAge - (Math.min(partner1.retirementAge - partner1.currentAge, partner2.retirementAge - partner2.currentAge)) + 1)})
+                                </div>
+                              </div>
+                              <div className="p-2 bg-white rounded">
+                                <div className="font-medium text-pink-900">{partner2.name}</div>
+                                <div>Eligible at age {agePensionParams.eligibilityAge}</div>
+                                <div className="text-gray-600">
+                                  (Year {Math.max(1, agePensionParams.eligibilityAge - partner2.currentAge - (Math.min(partner1.retirementAge - partner1.currentAge, partner2.retirementAge - partner2.currentAge)) + 1)})
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-2 p-2 bg-green-100 rounded border border-green-300 text-xs">
+                              <strong>✓ Accurate Modeling:</strong>
+                              <ul className="list-disc list-inside mt-1 space-y-1">
+                                <li><strong>Both under 67:</strong> No age pension</li>
+                                <li><strong>One 67+, one under 67:</strong> Single rate (~$29.8k) for eligible partner only</li>
+                                <li><strong>Both 67+:</strong> Couple rate (~$44.9k combined), split 50/50</li>
+                                <li><strong>After death:</strong> Survivor gets single rate</li>
+                              </ul>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="text-xs text-gray-600 p-2 bg-yellow-50 rounded border border-yellow-200">
+                        <strong>Asset Test:</strong> Pension reduces as total assets exceed {formatCurrency(agePensionParams.threshold)} ({isHomeowner ? 'homeowner' : 'non-homeowner'})
+                        <br />
+                        <strong>Income Test:</strong> Pension reduces for income over {formatCurrency(agePensionParams.incomeTestFreeArea)}/year
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Total Pension Summary */}
+                <div className="pt-3 border-t">
+                  <h4 className="font-semibold text-gray-900 mb-2">📊 Total Pension Income</h4>
+                  <div className="text-sm p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded">
+                    {enableCoupleTracking && pensionRecipientType === 'couple' ? (
+                      <div className="space-y-1">
+                        <div>
+                          <span className="font-medium">{partner1.name}:</span> {formatCurrency(partner1.pensionIncome)}
+                          {includeAgePension && <span className="text-gray-600"> + Age Pension (when eligible)</span>}
+                        </div>
+                        <div>
+                          <span className="font-medium">{partner2.name}:</span> {formatCurrency(partner2.pensionIncome)}
+                          {includeAgePension && <span className="text-gray-600"> + Age Pension (when eligible)</span>}
+                        </div>
+                        <div className="pt-2 mt-2 border-t border-purple-200 font-semibold">
+                          Combined Private: {formatCurrency(partner1.pensionIncome + partner2.pensionIncome)}/year
+                          {includeAgePension && <span className="text-gray-600 font-normal"> + Age Pension (varies by assets/income)</span>}
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <span className="font-semibold">{formatCurrency(totalPensionIncome)}/year</span>
+                        {includeAgePension && <span className="text-gray-600"> + Age Pension (when eligible, varies by assets/income)</span>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
           
           {!(pensionRecipientType === 'couple' && enableCoupleTracking) && (
           <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded">
@@ -4626,6 +4886,45 @@ const RetirementCalculator = () => {
                     <Line type="monotone" dataKey="Spending" stroke="#b91c1c" strokeWidth={2} name="Spending" />
                   )}
                 </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {/* Individual Partner Charts - only show when couple tracking enabled */}
+        {enableCoupleTracking && pensionRecipientType === 'couple' && simulationResults && (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-center mt-8">Individual Partner Analysis</h2>
+            
+            {/* Partner Super Balances Chart */}
+            <div className="bg-white border rounded p-4">
+              <h3 className="text-xl font-bold mb-3">Individual Super Balances</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="calendarYear" label={{ value: 'Year', position: 'insideBottom', offset: -5 }} />
+                  <YAxis tickFormatter={(val) => ((val as number)/1000).toFixed(0) + 'k'} />
+                  <Tooltip content={<CustomChartTooltip enableCoupleTracking={true} partner1Name={partner1.name} partner2Name={partner2.name} />} />
+                  <Legend />
+                  <Line type="monotone" dataKey="Partner 1 Super" stroke="#3b82f6" strokeWidth={2} name={`${partner1.name} Super`} />
+                  <Line type="monotone" dataKey="Partner 2 Super" stroke="#ec4899" strokeWidth={2} name={`${partner2.name} Super`} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Partner Pension Income Chart */}
+            <div className="bg-white border rounded p-4">
+              <h3 className="text-xl font-bold mb-3">Individual Pension Income</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="calendarYear" label={{ value: 'Year', position: 'insideBottom', offset: -5 }} />
+                  <YAxis tickFormatter={(val) => ((val as number)/1000).toFixed(0) + 'k'} />
+                  <Tooltip content={<CustomChartTooltip enableCoupleTracking={true} partner1Name={partner1.name} partner2Name={partner2.name} />} />
+                  <Legend />
+                  <Line type="monotone" dataKey="Partner 1 Pension" stroke="#3b82f6" strokeWidth={2} name={`${partner1.name} Pension`} />
+                  <Line type="monotone" dataKey="Partner 2 Pension" stroke="#ec4899" strokeWidth={2} name={`${partner2.name} Pension`} />
+                </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
