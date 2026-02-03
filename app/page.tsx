@@ -309,11 +309,11 @@ const RetirementCalculator = () => {
     // Debt validation
     if (includeDebt && debts.length > 0) {
       debts.forEach((debt, idx) => {
-        if (debt.principal < 0) errors[`debt${idx}Principal`] = `Debt ${idx + 1}: Principal cannot be negative`;
+        if (debt.amount < 0) errors[`debt${idx}Amount`] = `Debt ${idx + 1}: Amount cannot be negative`;
         if (debt.interestRate < 0) errors[`debt${idx}Rate`] = `Debt ${idx + 1}: Interest rate cannot be negative`;
         if (debt.interestRate > 30) warnings[`debt${idx}Rate`] = `Debt ${idx + 1}: Interest rate over 30% is very high`;
-        if (debt.years < 1) errors[`debt${idx}Years`] = `Debt ${idx + 1}: Term must be at least 1 year`;
-        if (debt.years > 30) warnings[`debt${idx}Years`] = `Debt ${idx + 1}: Term over 30 years is unusual`;
+        if (debt.repaymentYears < 1) errors[`debt${idx}Years`] = `Debt ${idx + 1}: Term must be at least 1 year`;
+        if (debt.repaymentYears > 30) warnings[`debt${idx}Years`] = `Debt ${idx + 1}: Term over 30 years is unusual`;
         if (debt.extraPayment < 0) errors[`debt${idx}Extra`] = `Debt ${idx + 1}: Extra payment cannot be negative`;
       });
     }
