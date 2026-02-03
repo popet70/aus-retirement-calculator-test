@@ -74,6 +74,10 @@ const RetirementCalculator = () => {
   const [expectedReturn, setExpectedReturn] = useState(7);
   const [returnVolatility, setReturnVolatility] = useState(18);
   const [monteCarloResults, setMonteCarloResults] = useState<any>(null);
+  const [useHistoricalMonteCarlo, setUseHistoricalMonteCarlo] = useState(false);
+  const [historicalMethod, setHistoricalMethod] = useState<'shuffle' | 'overlapping' | 'block'>('overlapping');
+  const [blockSize, setBlockSize] = useState(5);
+  const [historicalMonteCarloResults, setHistoricalMonteCarloResults] = useState<any>(null);
   const [formalTestResults, setFormalTestResults] = useState(null);
   const [selectedFormalTest, setSelectedFormalTest] = useState<string | null>(null);
   const [splurgeAmount, setSplurgeAmount] = useState(0);
@@ -138,20 +142,6 @@ const RetirementCalculator = () => {
 
   const [showAssumptions, setShowAssumptions] = useState(false);
   
-  useEffect(() => {
-    const accepted = localStorage.getItem(`termsAccepted_${TERMS_VERSION}`);
-    if (accepted === 'true') {
-      setTermsAcknowledged(true);
-    }
-    setIsMounted(true);
-  }, []);
-
-  const acknowledgeTerms = () => {
-    localStorage.setItem(`termsAccepted_${TERMS_VERSION}`, 'true');
-    setTermsAcknowledged(true);
-  };
-
-  
   // Aged Care Configuration
   const [includeAgedCare, setIncludeAgedCare] = useState(false);
   const [agedCareApproach, setAgedCareApproach] = useState<'probabilistic' | 'deterministic'>('probabilistic');
@@ -182,6 +172,179 @@ const RetirementCalculator = () => {
   }>>([
     { name: 'Home Mortgage', amount: 200000, interestRate: 5.5, repaymentYears: 10, extraPayment: 0 }
   ]);
+  
+  // Validation State
+  const [validationErrors, setValidationErrors] = useState<{[key: string]: string}>({});
+  const [validationWarnings, setValidationWarnings] = useState<{[key: string]: string}>({});
+  
+  // Validation Function
+  const validateInputs = () => {
+    const errors: {[key: string]: string} = {};
+    const warnings: {[key: string]: string} = {};
+    
+    // Basic financial validations
+    if (mainSuperBalance < 0) errors.mainSuper = "Super balance cannot be negative";
+    if (sequencingBuffer < 0) errors.seqBuffer = "Sequencing buffer cannot be negative";
+    if (totalPensionIncome < 0) errors.pension = "Pension income cannot be negative";
+    if (baseSpending < 0) errors.spending = "Base spending cannot be negative";
+    
+    // Reasonable bounds warnings
+    if (mainSuperBalance > 10000000) warnings.mainSuper = "Super balance over $10M is unusual - verify this value";
+    if (baseSpending < 30000) warnings.spending = "Annual spending below $30k is quite low - is this correct?";
+    if (baseSpending > 300000) warnings.spending = "Annual spending over $300k is very high - verify this value";
+    
+    // Spending vs resources
+    const totalResources = mainSuperBalance + sequencingBuffer + (enableCoupleTracking ? 0 : totalPensionIncome * 20);
+    if (baseSpending > totalResources / 10) {
+      warnings.sustainability = "Spending rate is high relative to resources - plan may not be sustainable";
+    }
+    
+    // Couple tracking validations
+    if (enableCoupleTracking && pensionRecipientType === 'couple') {
+      if (partner1.superBalance < 0) errors.p1Super = "Partner 1 super cannot be negative";
+      if (partner2.superBalance < 0) errors.p2Super = "Partner 2 super cannot be negative";
+      if (partner1.pensionIncome < 0) errors.p1Pension = "Partner 1 pension cannot be negative";
+      if (partner2.pensionIncome < 0) errors.p2Pension = "Partner 2 pension cannot be negative";
+      
+      if (partner1.retirementAge < partner1.currentAge) {
+        errors.p1Retirement = "Partner 1 retirement age must be >= current age";
+      }
+      if (partner2.retirementAge < partner2.currentAge) {
+        errors.p2Retirement = "Partner 2 retirement age must be >= current age";
+      }
+      
+      if (partner1.deathAge <= partner1.currentAge) {
+        errors.p1Death = "Partner 1 modeled death age must be > current age";
+      }
+      if (partner2.deathAge <= partner2.currentAge) {
+        errors.p2Death = "Partner 2 modeled death age must be > current age";
+      }
+      
+      if (partner1.deathAge < partner1.retirementAge) {
+        warnings.p1DeathEarly = "Partner 1 dies before retirement in this scenario";
+      }
+      if (partner2.deathAge < partner2.retirementAge) {
+        warnings.p2DeathEarly = "Partner 2 dies before retirement in this scenario";
+      }
+      
+      // Pre-retirement income validation
+      if (partner1.currentAge < partner1.retirementAge && partner1.preRetirementIncome === 0) {
+        warnings.p1PreRetire = "Partner 1 not yet retired but has no pre-retirement income";
+      }
+      if (partner2.currentAge < partner2.retirementAge && partner2.preRetirementIncome === 0) {
+        warnings.p2PreRetire = "Partner 2 not yet retired but has no pre-retirement income";
+      }
+      
+      if (partner1.reversionaryRate < 0 || partner1.reversionaryRate > 100) {
+        errors.p1Rev = "Reversionary rate must be between 0-100%";
+      }
+      if (partner2.reversionaryRate < 0 || partner2.reversionaryRate > 100) {
+        errors.p2Rev = "Reversionary rate must be between 0-100%";
+      }
+    } else {
+      // Simple mode validations
+      if (retirementAge < currentAge) {
+        errors.retirement = "Retirement age must be >= current age";
+      }
+    }
+    
+    // Inflation validation
+    if (inflationRate < 0) errors.inflation = "Inflation rate cannot be negative";
+    if (inflationRate > 10) warnings.inflation = "Inflation over 10% is very high - verify this assumption";
+    
+    // Monte Carlo validations
+    if (useMonteCarlo || useHistoricalMonteCarlo) {
+      if (monteCarloRuns < 100) warnings.mcRuns = "Fewer than 100 runs may not provide reliable results";
+      if (monteCarloRuns > 10000) warnings.mcRuns = "More than 10,000 runs may be slow to calculate";
+      if (expectedReturn < -10 || expectedReturn > 20) {
+        errors.expectedReturn = "Expected return should be between -10% and 20%";
+      }
+      if (returnVolatility < 0 || returnVolatility > 50) {
+        errors.volatility = "Return volatility should be between 0% and 50%";
+      }
+    }
+    
+    // Guardrails validation
+    if (useGuardrails) {
+      if (upperGuardrail <= lowerGuardrail) {
+        errors.guardrails = "Upper guardrail must be > lower guardrail";
+      }
+      if (lowerGuardrail < 5) warnings.lowerGuardrail = "Lower guardrail below 5% is very aggressive";
+      if (upperGuardrail > 50) warnings.upperGuardrail = "Upper guardrail above 50% is very wide";
+      if (guardrailAdjustment < 1 || guardrailAdjustment > 30) {
+        warnings.guardrailAdj = "Guardrail adjustment should typically be 5-20%";
+      }
+    }
+    
+    // Splurge validation
+    if (splurgeAmount > 0) {
+      if (splurgeAmount > baseSpending) {
+        warnings.splurge = "Splurge amount exceeds base spending - verify this is intentional";
+      }
+      if (splurgeStartAge < currentAge) {
+        errors.splurgeStart = "Splurge start age cannot be in the past";
+      }
+      if (splurgeDuration < 1) errors.splurgeDuration = "Splurge duration must be at least 1 year";
+      if (splurgeDuration > 20) warnings.splurgeDuration = "Splurge duration over 20 years is unusual";
+    }
+    
+    // Aged Care validation
+    if (includeAgedCare) {
+      if (agedCareRAD < 0) errors.agedCareRAD = "RAD cannot be negative";
+      if (agedCareRAD > 1000000) warnings.agedCareRAD = "RAD over $1M is very high - verify this amount";
+      if (agedCareAnnualCost < 0) errors.agedCareCost = "Annual aged care cost cannot be negative";
+      if (agedCareDuration < 1) errors.agedCareDuration = "Aged care duration must be at least 1 year";
+      
+      if (agedCareApproach === 'deterministic') {
+        if (deterministicAgedCareAge < currentAge) {
+          errors.agedCareAge = "Aged care entry age cannot be in the past";
+        }
+        if (deterministicAgedCareAge > 100) {
+          warnings.agedCareAge = "Aged care entry after age 100 is unusual";
+        }
+      }
+    }
+    
+    // Debt validation
+    if (includeDebt && debts.length > 0) {
+      debts.forEach((debt, idx) => {
+        if (debt.principal < 0) errors[`debt${idx}Principal`] = `Debt ${idx + 1}: Principal cannot be negative`;
+        if (debt.interestRate < 0) errors[`debt${idx}Rate`] = `Debt ${idx + 1}: Interest rate cannot be negative`;
+        if (debt.interestRate > 30) warnings[`debt${idx}Rate`] = `Debt ${idx + 1}: Interest rate over 30% is very high`;
+        if (debt.years < 1) errors[`debt${idx}Years`] = `Debt ${idx + 1}: Term must be at least 1 year`;
+        if (debt.years > 30) warnings[`debt${idx}Years`] = `Debt ${idx + 1}: Term over 30 years is unusual`;
+        if (debt.extraPayment < 0) errors[`debt${idx}Extra`] = `Debt ${idx + 1}: Extra payment cannot be negative`;
+      });
+    }
+    
+    setValidationErrors(errors);
+    setValidationWarnings(warnings);
+    
+    return Object.keys(errors).length === 0;
+  };
+  
+  // Run validation whenever key inputs change
+  useEffect(() => {
+    validateInputs();
+  }, [mainSuperBalance, sequencingBuffer, totalPensionIncome, baseSpending, currentAge, retirementAge,
+      enableCoupleTracking, partner1, partner2, inflationRate, useMonteCarlo, useHistoricalMonteCarlo,
+      monteCarloRuns, expectedReturn, returnVolatility, useGuardrails, upperGuardrail, lowerGuardrail,
+      guardrailAdjustment, splurgeAmount, splurgeStartAge, splurgeDuration, includeAgedCare,
+      agedCareRAD, agedCareAnnualCost, agedCareDuration, agedCareApproach, deterministicAgedCareAge,
+      includeDebt, debts]);
+  
+  useEffect(() => {
+    const accepted = localStorage.getItem(`termsAccepted_${TERMS_VERSION}`);
+    if (accepted === 'true') {
+      setTermsAcknowledged(true);
+    }
+    setIsMounted(true);
+  }, []);
+
+  const acknowledgeTerms = () => {
+    localStorage.setItem(`termsAccepted_${TERMS_VERSION}`, 'true');
+    setTermsAcknowledged(true);
+  };
 
   // Calculate retirement year based on current age
   const getRetirementYear = (retAge: number) => {
@@ -282,12 +445,6 @@ const RetirementCalculator = () => {
     { year: 2025, return: 12.1 }
   ];
 
-  // New state for Historical Monte Carlo
-  const [useHistoricalMonteCarlo, setUseHistoricalMonteCarlo] = useState(false);
-  const [historicalMethod, setHistoricalMethod] = useState<'shuffle' | 'overlapping' | 'block'>('overlapping');
-  const [blockSize, setBlockSize] = useState(5);
-  const [historicalMonteCarloResults, setHistoricalMonteCarloResults] = useState<any>(null);
-
   // Auto-switch aged care to deterministic when leaving Monte Carlo scenarios
   useEffect(() => {
     if (includeAgedCare && agedCareApproach === 'probabilistic' && !useMonteCarlo && !useHistoricalMonteCarlo) {
@@ -356,6 +513,17 @@ const RetirementCalculator = () => {
       };
     }
   }, [pensionRecipientType]);
+
+  // Get CSS class for input fields based on validation
+  const getInputClass = (fieldKey: string, baseClass: string = "w-full p-2 border rounded") => {
+    if (validationErrors[fieldKey]) {
+      return `${baseClass} border-red-500 bg-red-50`;
+    }
+    if (validationWarnings[fieldKey]) {
+      return `${baseClass} border-yellow-400 bg-yellow-50`;
+    }
+    return baseClass;
+  };
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 }).format(value);
@@ -2069,10 +2237,11 @@ const RetirementCalculator = () => {
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
   };
-
-if (!isMounted) {
-  return null;
-}
+  
+  // Early return if not mounted (for SSR compatibility)
+  if (!isMounted) {
+    return null;
+  }
   
   return (
     <div className="max-w-6xl mx-auto p-6 bg-gray-50">
@@ -2163,7 +2332,7 @@ if (!isMounted) {
   <div className="flex justify-between items-start mb-4">
     <div>
       <h1 className="text-3xl font-bold text-gray-800 mb-2">Australian Retirement Planning Tool</h1>
-      <p className="text-gray-600">Version 14.9 - Splurge Ramp-Down Feature</p>
+      <p className="text-gray-600">Version 15 - Individual Partner Tracking</p>
     </div>
     <div className="text-right">
       <label className="block text-sm font-medium text-gray-700 mb-2">Display Values</label>
@@ -2280,6 +2449,76 @@ if (!isMounted) {
          </div>
         )}
 
+        {/* Validation Errors - Always visible if present */}
+        {Object.keys(validationErrors).length > 0 && (
+          <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3 flex-1">
+                <h3 className="text-sm font-semibold text-red-800 mb-2">
+                  ⚠️ Input Errors Detected ({Object.keys(validationErrors).length})
+                </h3>
+                <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
+                  {Object.entries(validationErrors).map(([key, message]) => (
+                    <li key={key}>{message}</li>
+                  ))}
+                </ul>
+                <p className="text-xs text-red-600 mt-2 italic">
+                  Please correct these errors before running calculations. Results may be unreliable.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Validation Warnings - Collapsible */}
+        {Object.keys(validationWarnings).length > 0 && (
+          <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3 flex-1">
+                <h3 className="text-sm font-semibold text-yellow-800 mb-2">
+                  ⚡ Warnings ({Object.keys(validationWarnings).length})
+                </h3>
+                <ul className="list-disc list-inside text-sm text-yellow-700 space-y-1">
+                  {Object.entries(validationWarnings).map(([key, message]) => (
+                    <li key={key}>{message}</li>
+                  ))}
+                </ul>
+                <p className="text-xs text-yellow-600 mt-2 italic">
+                  These warnings highlight unusual values. Review them to ensure they're intentional.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Success indicator when no errors/warnings */}
+        {Object.keys(validationErrors).length === 0 && Object.keys(validationWarnings).length === 0 && (
+          <div className="mb-6 p-3 bg-green-50 border-l-4 border-green-400 rounded">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm font-medium text-green-800">
+                  ✓ All inputs validated - Ready to calculate
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         
         {showHelpPanel && (
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6 mb-6">
@@ -2356,7 +2595,7 @@ if (!isMounted) {
               <div className="flex gap-2 justify-center">
                 <button 
                   onClick={() => {
-                    window.open('https://github.com/popet70/retirement-calculator/raw/main/docs/Retirement_Calculator_User_Guide_v15_0.pdf', '_blank');
+                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_0.pdf', '_blank');
                   }}
                   className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
                 >
@@ -2364,7 +2603,7 @@ if (!isMounted) {
                 </button>
                 <button 
                   onClick={() => {
-                    window.open('https://github.com/popet70/retirement-calculator/raw/main/docs/Retirement_Calculator_User_Guide_v15_0.docx', '_blank');
+                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_0.docx', '_blank');
                   }}
                   className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm font-medium"
                 >
@@ -2387,14 +2626,30 @@ if (!isMounted) {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Base Annual Spending</label>
-                <input type="number" value={baseSpending} onChange={(e) => setBaseSpending(Number(e.target.value))} className="w-full p-2 border rounded" step="5000" />
+                <input 
+                  type="number" 
+                  value={baseSpending} 
+                  onChange={(e) => setBaseSpending(Number(e.target.value))} 
+                  className={getInputClass('spending')}
+                  step="5000" 
+                />
+                {validationErrors.spending && <p className="text-xs text-red-600 mt-1">{validationErrors.spending}</p>}
+                {validationWarnings.spending && <p className="text-xs text-yellow-600 mt-1">{validationWarnings.spending}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">
                   Sequencing Buffer
                   <InfoTooltip text="Cash/defensive assets to cover early retirement years. Withdrawals follow: Cash → Buffer → Main Super. Earns 3% real return (defensive)." />
                 </label>
-                <input type="number" value={sequencingBuffer} onChange={(e) => setSequencingBuffer(Number(e.target.value))} className="w-full p-2 border rounded" step="10000" />
+                <input 
+                  type="number" 
+                  value={sequencingBuffer} 
+                  onChange={(e) => setSequencingBuffer(Number(e.target.value))} 
+                  className={getInputClass('seqBuffer')}
+                  step="10000" 
+                />
+                {validationErrors.seqBuffer && <p className="text-xs text-red-600 mt-1">{validationErrors.seqBuffer}</p>}
+                {validationWarnings.seqBuffer && <p className="text-xs text-yellow-600 mt-1">{validationWarnings.seqBuffer}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">
@@ -2405,11 +2660,13 @@ if (!isMounted) {
                   type="number" 
                   value={inflationRate} 
                   onChange={(e) => setInflationRate(Number(e.target.value))} 
-                  className="w-full p-2 border rounded" 
+                  className={getInputClass('inflation')}
                   step="0.1"
                   min="0"
                   max="10"
                 />
+                {validationErrors.inflation && <p className="text-xs text-red-600 mt-1">{validationErrors.inflation}</p>}
+                {validationWarnings.inflation && <p className="text-xs text-yellow-600 mt-1">{validationWarnings.inflation}</p>}
               </div>
             </div>
           </div>
@@ -2452,14 +2709,30 @@ if (!isMounted) {
                 Main Super Balance
                 <InfoTooltip text="Your superannuation balance at retirement. This is the amount you'll have when you start drawing from super (not your current balance if you're still working)." />
               </label>
-              <input type="number" value={mainSuperBalance} onChange={(e) => setMainSuperBalance(Number(e.target.value))} className="w-full p-2 border rounded" step="10000" />
+              <input 
+                type="number" 
+                value={mainSuperBalance} 
+                onChange={(e) => setMainSuperBalance(Number(e.target.value))} 
+                className={getInputClass('mainSuper')}
+                step="10000" 
+              />
+              {validationErrors.mainSuper && <p className="text-xs text-red-600 mt-1">{validationErrors.mainSuper}</p>}
+              {validationWarnings.mainSuper && <p className="text-xs text-yellow-600 mt-1">{validationWarnings.mainSuper}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">
                 Pension Income (per year)
                 <InfoTooltip text="Your annual PSS/CSS/defined benefit pension income starting from retirement. Automatically indexed to inflation each year." />
               </label>
-              <input type="number" value={totalPensionIncome} onChange={(e) => setTotalPensionIncome(Number(e.target.value))} className="w-full p-2 border rounded" step="5000" />
+              <input 
+                type="number" 
+                value={totalPensionIncome} 
+                onChange={(e) => setTotalPensionIncome(Number(e.target.value))} 
+                className={getInputClass('pension')}
+                step="5000" 
+              />
+              {validationErrors.pension && <p className="text-xs text-red-600 mt-1">{validationErrors.pension}</p>}
+              {validationWarnings.pension && <p className="text-xs text-yellow-600 mt-1">{validationWarnings.pension}</p>}
             </div>
           </div>
 
