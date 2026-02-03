@@ -105,6 +105,7 @@ const RetirementCalculator = () => {
   const [showOneOffExpenses, setShowOneOffExpenses] = useState(false);
   const [showPensionSummary, setShowPensionSummary] = useState(true);
   const [showPensionDetails, setShowPensionDetails] = useState(false);
+  const [showExecutiveSummary, setShowExecutiveSummary] = useState(false);
   const [currentAge, setCurrentAge] = useState(55);
   const [retirementAge, setRetirementAge] = useState(60);
   const [pensionRecipientType, setPensionRecipientType] = useState<'single' | 'couple'>('couple');
@@ -474,7 +475,7 @@ const RetirementCalculator = () => {
       const test = formalTests[key as keyof typeof formalTests];
       const simResult = runSimulation(test.returns, test.cpi, test.health, test.years);
       const targetYears = test.years;
-      const passed = simResult && simResult.length >= targetYears && simResult[simResult.length - 1].totalBalance > 0;
+      const passed = simResult && simResult.length >= targetYears && simResult[simResult.length - 1].totalBalance >= 0;
       results[key] = {
         name: test.name,
         desc: test.desc,
@@ -1602,7 +1603,7 @@ const RetirementCalculator = () => {
       allResults.push(result);
       
       // Analyze if this scenario failed
-      const failed = result.length < 35 || result[result.length - 1].totalBalance <= 0;
+      const failed = result.length < 35 || result[result.length - 1].totalBalance < 0;
       if (failed) {
         const failureYear = result.length;
         const failureAge = result[result.length - 1]?.age || 0;
@@ -1810,7 +1811,7 @@ const RetirementCalculator = () => {
         uniqueBlocksMap.set(i, { startYear, endYear, startIdx });
         
         // Analyze if this scenario failed
-        const failed = result.length < 35 || result[result.length - 1].totalBalance <= 0;
+        const failed = result.length < 35 || result[result.length - 1].totalBalance < 0;
         if (failed) {
           const failureYear = result.length;
           const failureAge = result[result.length - 1]?.age || 0;
@@ -1886,7 +1887,7 @@ const RetirementCalculator = () => {
         allResults.push(result);
       
       // Analyze if this scenario failed
-      const failed = result.length < 35 || result[result.length - 1].totalBalance <= 0;
+      const failed = result.length < 35 || result[result.length - 1].totalBalance < 0;
       if (failed) {
         const failureYear = result.length;
         const failureAge = result[result.length - 1]?.age || 0;
@@ -2600,7 +2601,7 @@ const RetirementCalculator = () => {
   <div className="flex justify-between items-start mb-4">
     <div>
       <h1 className="text-3xl font-bold text-gray-800 mb-2">Australian Retirement Planning Tool</h1>
-      <p className="text-gray-600">Version 15.1 - Enhanced Visualization & Pension Modeling</p>
+      <p className="text-gray-600">Version 15.2 - Executive Summary Dashboard</p>
     </div>
     <div className="text-right">
       <label className="block text-sm font-medium text-gray-700 mb-2">Display Values</label>
@@ -2863,7 +2864,7 @@ const RetirementCalculator = () => {
               <div className="flex gap-2 justify-center">
                 <button 
                   onClick={() => {
-                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_1.pdf', '_blank');
+                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_2.pdf', '_blank');
                   }}
                   className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
                 >
@@ -2871,7 +2872,7 @@ const RetirementCalculator = () => {
                 </button>
                 <button 
                   onClick={() => {
-                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_1.docx', '_blank');
+                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_2.docx', '_blank');
                   }}
                   className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm font-medium"
                 >
@@ -4614,6 +4615,448 @@ const RetirementCalculator = () => {
           </div>
         )}
 
+        {/* Executive Summary Dashboard */}
+        {chartData.length > 0 && (
+          <div className="mb-6">
+            <button
+              onClick={() => setShowExecutiveSummary(!showExecutiveSummary)}
+              className="w-full px-4 py-3 bg-gradient-to-r from-indigo-50 to-blue-50 hover:from-indigo-100 hover:to-blue-100 border border-indigo-200 rounded-lg flex items-center justify-between font-semibold text-gray-800 transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                📊 Executive Summary
+                <span className="text-xs font-normal text-gray-600">Key metrics and outcomes</span>
+              </span>
+              <span className="text-xl">{showExecutiveSummary ? '−' : '+'}</span>
+            </button>
+            
+            {showExecutiveSummary && (() => {
+              // Calculate summary metrics from simulation results (raw data)
+              if (!simulationResults || simulationResults.length === 0) return null;
+              
+              const firstYear = simulationResults[0];
+              const lastYear = simulationResults[simulationResults.length - 1];
+              const startingBalance = firstYear.totalBalance;
+              const endingBalance = lastYear.totalBalance;
+              const yearsRun = simulationResults.length;
+              const targetYears = useFormalTest && selectedFormalTest && formalTestResults 
+                ? (formalTestResults[selectedFormalTest as keyof typeof formalTestResults] as any)?.targetYears || 35
+                : 35;
+              
+              // Success determination
+              // Success = made it to target years AND didn't go negative (0 is acceptable - just used last dollar)
+              const success = yearsRun >= targetYears && endingBalance >= 0;
+              const failureYear = success ? null : yearsRun;
+              
+              // Calculate total withdrawals
+              const totalWithdrawn = simulationResults.reduce((sum: number, year: any) => sum + (year.withdrawn || 0), 0);
+              
+              // Calculate average return (weighted by balance)
+              const avgReturn = simulationResults.length > 1 
+                ? simulationResults.slice(1).reduce((sum: number, year: any) => sum + (year.yearReturn || 0), 0) / (simulationResults.length - 1)
+                : 0;
+              
+              // Get pension info
+              const firstPensionYear = simulationResults.find((y: any) => (y.pensionIncome || 0) > 0);
+              const privatePensionTotal = firstPensionYear?.pensionIncome || totalPensionIncome;
+              const agePensionStartYear = simulationResults.findIndex((y: any) => (y.agePension || 0) > 0);
+              const maxAgePension = Math.max(...simulationResults.map((y: any) => y.agePension || 0));
+              
+              // Calculate average annual spending
+              const avgSpending = simulationResults.reduce((sum: number, y: any) => sum + (y.spending || 0), 0) / simulationResults.length;
+              const peakSpending = Math.max(...simulationResults.map((y: any) => y.spending || 0));
+              const peakSpendingYear = simulationResults.findIndex((y: any) => y.spending === peakSpending) + 1;
+              
+              // Risk indicators
+              const earlyNegativeReturns = simulationResults.slice(0, 5).some((y: any) => (y.yearReturn || 0) < -10);
+              const runningLowLater = simulationResults.length > 20 && simulationResults.slice(-10).some((y: any) => {
+                const balance = y.totalBalance || 0;
+                const initialBalance = simulationResults[0].totalBalance || 1;
+                return balance < initialBalance * 0.2; // Below 20% of starting
+              });
+              const highInflation = (useFormalTest && selectedFormalTest && 
+                (formalTestResults?.[selectedFormalTest as keyof typeof formalTestResults] as any)?.desc?.includes('5% CPI')) || 
+                inflationRate > 4;
+              const hasAgedCare = simulationResults.some((y: any) => y.inAgedCare);
+              
+              // Monte Carlo metrics
+              const mcSuccess = useMonteCarlo && monteCarloResults ? monteCarloResults.successRate : null;
+              const mcP10 = useMonteCarlo && monteCarloResults?.percentiles ? 
+                monteCarloResults.percentiles[monteCarloResults.percentiles.length - 1]?.p10 : null;
+              const mcP50 = useMonteCarlo && monteCarloResults?.percentiles ? 
+                monteCarloResults.percentiles[monteCarloResults.percentiles.length - 1]?.p50 : null;
+              const mcP90 = useMonteCarlo && monteCarloResults?.percentiles ? 
+                monteCarloResults.percentiles[monteCarloResults.percentiles.length - 1]?.p90 : null;
+              
+              const hmcSuccess = useHistoricalMonteCarlo && historicalMonteCarloResults ? historicalMonteCarloResults.successRate : null;
+              const hmcP10 = useHistoricalMonteCarlo && historicalMonteCarloResults?.percentiles ? 
+                historicalMonteCarloResults.percentiles[historicalMonteCarloResults.percentiles.length - 1]?.p10 : null;
+              const hmcP50 = useHistoricalMonteCarlo && historicalMonteCarloResults?.percentiles ? 
+                historicalMonteCarloResults.percentiles[historicalMonteCarloResults.percentiles.length - 1]?.p50 : null;
+              const hmcP90 = useHistoricalMonteCarlo && historicalMonteCarloResults?.percentiles ? 
+                historicalMonteCarloResults.percentiles[historicalMonteCarloResults.percentiles.length - 1]?.p90 : null;
+              
+              // Couple tracking metrics
+              const partner1FinalSuper = enableCoupleTracking && lastYear.partner1Super !== undefined ? lastYear.partner1Super : null;
+              const partner2FinalSuper = enableCoupleTracking && lastYear.partner2Super !== undefined ? lastYear.partner2Super : null;
+              const partner1TotalPension = enableCoupleTracking && lastYear.partner1Pension !== undefined ? lastYear.partner1Pension : null;
+              const partner2TotalPension = enableCoupleTracking && lastYear.partner2Pension !== undefined ? lastYear.partner2Pension : null;
+              
+              // Determine which scenario is active
+              let scenarioName = '';
+              let scenarioIcon = '';
+              let scenarioContext = '';
+              
+              if (useHistoricalMonteCarlo && historicalMonteCarloResults) {
+                scenarioName = 'Historical Monte Carlo';
+                scenarioIcon = '🎲';
+                scenarioContext = success 
+                  ? `Median scenario succeeded (${(hmcSuccess || 0).toFixed(0)}% of historical simulations succeeded)` 
+                  : `Median scenario failed (only ${(hmcSuccess || 0).toFixed(0)}% of historical simulations succeeded)`;
+              } else if (useMonteCarlo && monteCarloResults) {
+                scenarioName = 'Monte Carlo Simulation';
+                scenarioIcon = '🎲';
+                scenarioContext = success 
+                  ? `Median (P50) scenario succeeded (${(mcSuccess || 0).toFixed(0)}% of simulations succeeded)` 
+                  : `Median (P50) scenario failed (only ${(mcSuccess || 0).toFixed(0)}% of simulations succeeded)`;
+              } else if (useFormalTest && selectedFormalTest && formalTestResults) {
+                const testData = formalTestResults[selectedFormalTest as keyof typeof formalTestResults] as any;
+                scenarioName = testData?.name || 'Formal Test';
+                scenarioIcon = '🧪';
+                scenarioContext = success 
+                  ? `Survived ${testData?.desc || 'stress test'}` 
+                  : `Failed ${testData?.desc || 'stress test'}`;
+              } else if (useHistoricalData) {
+                const periodLabels: { [key: string]: string } = {
+                  '1929': '1929-1931 Great Depression',
+                  '1973': '1973-1975 Oil Crisis', 
+                  '2000': '2000-2002 Dot-com Crash',
+                  '2008': '2008-2010 GFC'
+                };
+                scenarioName = periodLabels[historicalPeriod] || `Historical ${historicalPeriod}`;
+                scenarioIcon = '📊';
+                scenarioContext = success ? 'Survived historical period' : 'Failed historical period';
+              } else {
+                scenarioName = `Constant ${selectedScenario}% Return`;
+                scenarioIcon = '📈';
+                scenarioContext = success ? 'Plan successful' : 'Plan failed';
+              }
+              
+              return (
+                <div className="mt-4 p-6 bg-white border border-indigo-200 rounded-lg">
+                  {/* Scenario Indicator */}
+                  <div className="mb-4 px-4 py-2 bg-indigo-100 border border-indigo-300 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{scenarioIcon}</span>
+                        <span className="font-semibold text-indigo-900">Scenario Analysis:</span>
+                        <span className="text-indigo-800">{scenarioName}</span>
+                      </div>
+                      {(useMonteCarlo || useHistoricalMonteCarlo) && (
+                        <span className="text-xs text-indigo-700 bg-indigo-50 px-2 py-1 rounded">
+                          Showing Median (P50) Outcome
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Status Banner */}
+                  <div className={`mb-6 p-4 rounded-lg ${success ? 'bg-green-50 border-2 border-green-400' : 'bg-red-50 border-2 border-red-400'}`}>
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl">{success ? '✅' : '❌'}</span>
+                      <div>
+                        <h3 className={`text-xl font-bold ${success ? 'text-green-900' : 'text-red-900'}`}>
+                          {success ? 'Plan Successful' : 'Plan Failed'}
+                        </h3>
+                        <p className={`text-sm ${success ? 'text-green-800' : 'text-red-800'}`}>
+                          {success 
+                            ? `Portfolio lasted ${yearsRun} years with ${formatCurrency(toDisplayValue(endingBalance, yearsRun, simulationResults[yearsRun - 1]?.cpiRate))} remaining`
+                            : `Portfolio depleted in year ${failureYear} (target: ${targetYears} years)`
+                          }
+                        </p>
+                        {scenarioContext && (
+                          <p className={`text-xs mt-1 ${success ? 'text-green-700' : 'text-red-700'}`}>
+                            {scenarioContext}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Main Metrics Grid */}
+                  <div className="mb-2 text-right">
+                    <span className="text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded">
+                      All values in {showNominalDollars ? 'Nominal $' : `Real ${getRetirementYear(retirementAge)} $`}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    {/* Portfolio Summary */}
+                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                      <h4 className="font-bold text-blue-900 mb-3 flex items-center gap-2">
+                        💰 Portfolio Summary
+                      </h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-700 flex items-center">
+                            Starting Balance
+                            <InfoTooltip text="Total portfolio value at the beginning of retirement (Year 1). Includes Main Super, Sequencing Buffer, and Cash Account." />
+                          </span>
+                          <span className="font-semibold">{formatCurrency(toDisplayValue(startingBalance, 1))}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-700 flex items-center">
+                            Ending Balance
+                            <InfoTooltip text={`Total portfolio value at year ${yearsRun}. Green if >50% of starting, amber if >0%, red if depleted.`} />
+                          </span>
+                          <span className={`font-semibold ${endingBalance > startingBalance * 0.5 ? 'text-green-700' : endingBalance > 0 ? 'text-amber-700' : 'text-red-700'}`}>
+                            {formatCurrency(toDisplayValue(endingBalance, yearsRun, simulationResults[yearsRun - 1]?.cpiRate))}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-700 flex items-center">
+                            Total Withdrawn
+                            <InfoTooltip text="Cumulative amount withdrawn from portfolio over entire retirement period for spending, aged care, and debt payments." />
+                          </span>
+                          <span className="font-semibold">{formatCurrency(totalWithdrawn)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-700 flex items-center">
+                            Avg Return
+                            <InfoTooltip text="Average annual investment return achieved on Main Super over the simulation period. Green ≥5%, amber ≥3%, red <3%." />
+                          </span>
+                          <span className={`font-semibold ${avgReturn >= 5 ? 'text-green-700' : avgReturn >= 3 ? 'text-amber-700' : 'text-red-700'}`}>
+                            {avgReturn.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center pt-2 border-t border-blue-300">
+                          <span className="text-gray-700 flex items-center">
+                            Safety Margin
+                            <InfoTooltip text="Ending balance as percentage of starting balance. Shows how much cushion remains at the end of the plan period." />
+                          </span>
+                          <span className="font-semibold">
+                            {((endingBalance / startingBalance) * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Income Summary */}
+                    <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                      <h4 className="font-bold text-purple-900 mb-3 flex items-center gap-2">
+                        💵 Income Summary
+                      </h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-700 flex items-center">
+                            Private Pension
+                            <InfoTooltip text="Annual PSS/CSS/defined benefit pension income (Year 1 value). Automatically indexed to inflation each year." />
+                          </span>
+                          <span className="font-semibold">{formatCurrency(privatePensionTotal)}/yr</span>
+                        </div>
+                        {includeAgePension && (
+                          <>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-700 flex items-center">
+                                Age Pension Starts
+                                <InfoTooltip text="Year when age pension first becomes payable (age 67 for first eligible partner in couple mode)." />
+                              </span>
+                              <span className="font-semibold">
+                                {agePensionStartYear > 0 ? `Year ${agePensionStartYear}` : 'N/A'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-700 flex items-center">
+                                Max Age Pension
+                                <InfoTooltip text="Maximum age pension received during retirement. Varies based on assets and income tests." />
+                              </span>
+                              <span className="font-semibold">{formatCurrency(maxAgePension)}/yr</span>
+                            </div>
+                          </>
+                        )}
+                        <div className="flex justify-between items-center pt-2 border-t border-purple-300">
+                          <span className="text-gray-700 flex items-center">
+                            Avg Spending
+                            <InfoTooltip text="Average annual spending over the entire retirement period. Includes base spending, splurge, aged care, and debt payments." />
+                          </span>
+                          <span className="font-semibold">{formatCurrency(avgSpending)}/yr</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-700 flex items-center">
+                            Peak Spending
+                            <InfoTooltip text="Highest annual spending year. Typically occurs during splurge period or when aged care costs begin." />
+                          </span>
+                          <span className="font-semibold">
+                            {formatCurrency(peakSpending)} (Yr {peakSpendingYear})
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Risk Indicators */}
+                    <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                      <h4 className="font-bold text-amber-900 mb-3 flex items-center gap-2">
+                        ⚠️ Risk Assessment
+                      </h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-lg ${earlyNegativeReturns ? 'text-red-600' : 'text-green-600'}`}>
+                            {earlyNegativeReturns ? '🔴' : '🟢'}
+                          </span>
+                          <span className="text-gray-700 flex items-center">
+                            Sequence Risk
+                            <InfoTooltip text="Risk of poor returns in early retirement years. RED if any year in first 5 years had returns below -10%. Early losses are hardest to recover from." />
+                          </span>
+                          <span className="font-semibold text-xs ml-auto">
+                            {earlyNegativeReturns ? 'HIGH' : 'LOW'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-lg ${runningLowLater ? 'text-red-600' : 'text-green-600'}`}>
+                            {runningLowLater ? '🔴' : '🟢'}
+                          </span>
+                          <span className="text-gray-700 flex items-center">
+                            Longevity Risk
+                            <InfoTooltip text="Risk of outliving your money. RED if portfolio falls below 20% of starting balance in the final 10 years. May need to reduce spending or plan for shorter horizon." />
+                          </span>
+                          <span className="font-semibold text-xs ml-auto">
+                            {runningLowLater ? 'HIGH' : 'LOW'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-lg ${highInflation ? 'text-amber-600' : 'text-green-600'}`}>
+                            {highInflation ? '🟡' : '🟢'}
+                          </span>
+                          <span className="text-gray-700 flex items-center">
+                            Inflation Risk
+                            <InfoTooltip text="Risk from elevated inflation eroding purchasing power. ELEVATED if CPI >4%. High inflation reduces real returns and increases spending needs." />
+                          </span>
+                          <span className="font-semibold text-xs ml-auto">
+                            {highInflation ? 'ELEVATED' : 'NORMAL'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-lg ${hasAgedCare ? 'text-amber-600' : 'text-green-600'}`}>
+                            {hasAgedCare ? '🟡' : '🟢'}
+                          </span>
+                          <span className="text-gray-700 flex items-center">
+                            Health Costs
+                            <InfoTooltip text="Whether aged care costs are included in the simulation. INCLUDED means RAD and annual care costs are modeled. Can significantly impact portfolio." />
+                          </span>
+                          <span className="font-semibold text-xs ml-auto">
+                            {hasAgedCare ? 'INCLUDED' : 'NONE'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Monte Carlo Results */}
+                  {(useMonteCarlo || useHistoricalMonteCarlo) && (mcSuccess !== null || hmcSuccess !== null) && (
+                    <div className="mb-6 p-4 bg-teal-50 rounded-lg border border-teal-200">
+                      <h4 className="font-bold text-teal-900 mb-3 flex items-center gap-2">
+                        🎲 Monte Carlo Analysis
+                      </h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <div className="text-gray-600 text-xs mb-1 flex items-center">
+                            Success Rate
+                            <InfoTooltip text="Percentage of simulations that reached target years with positive balance. Green ≥90%, amber ≥75%, red <75%." />
+                          </div>
+                          <div className={`text-2xl font-bold ${
+                            (mcSuccess || hmcSuccess || 0) >= 90 ? 'text-green-700' : 
+                            (mcSuccess || hmcSuccess || 0) >= 75 ? 'text-amber-700' : 'text-red-700'
+                          }`}>
+                            {(mcSuccess || hmcSuccess || 0).toFixed(0)}%
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-gray-600 text-xs mb-1 flex items-center">
+                            P10 (Worst 10%)
+                            <InfoTooltip text="10th percentile ending balance. Only 10% of simulations ended worse than this. Represents pessimistic outcome." />
+                          </div>
+                          <div className="text-lg font-semibold text-red-700">
+                            {formatCurrency(mcP10 || hmcP10 || 0)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-gray-600 text-xs mb-1 flex items-center">
+                            P50 (Median)
+                            <InfoTooltip text="50th percentile (median) ending balance. Half of simulations ended above this, half below. Most typical outcome." />
+                          </div>
+                          <div className="text-lg font-semibold text-blue-700">
+                            {formatCurrency(mcP50 || hmcP50 || 0)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-gray-600 text-xs mb-1 flex items-center">
+                            P90 (Best 10%)
+                            <InfoTooltip text="90th percentile ending balance. Only 10% of simulations ended better than this. Represents optimistic outcome." />
+                          </div>
+                          <div className="text-lg font-semibold text-green-700">
+                            {formatCurrency(mcP90 || hmcP90 || 0)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Couple Tracking Summary */}
+                  {enableCoupleTracking && pensionRecipientType === 'couple' && partner1FinalSuper !== null && (
+                    <div className="p-4 bg-pink-50 rounded-lg border border-pink-200">
+                      <h4 className="font-bold text-pink-900 mb-3 flex items-center gap-2">
+                        👥 Individual Partner Summary
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div className="p-3 bg-white rounded border border-blue-200">
+                          <div className="font-semibold text-blue-900 mb-2">{partner1.name}</div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs items-center">
+                              <span className="text-gray-600 flex items-center">
+                                Final Super
+                                <InfoTooltip text="Individual superannuation balance remaining at end of simulation. Includes any super transferred from deceased partner." />
+                              </span>
+                              <span className="font-semibold">{formatCurrency(partner1FinalSuper || 0)}</span>
+                            </div>
+                            {partner1TotalPension !== null && (
+                              <div className="flex justify-between text-xs items-center">
+                                <span className="text-gray-600 flex items-center">
+                                  Total Pension
+                                  <InfoTooltip text="Final year total pension: private pension + age pension allocation (or reversionary amount if deceased)." />
+                                </span>
+                                <span className="font-semibold">{formatCurrency(partner1TotalPension)}/yr</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="p-3 bg-white rounded border border-pink-200">
+                          <div className="font-semibold text-pink-900 mb-2">{partner2.name}</div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs items-center">
+                              <span className="text-gray-600 flex items-center">
+                                Final Super
+                                <InfoTooltip text="Individual superannuation balance remaining at end of simulation. Includes any super transferred from deceased partner." />
+                              </span>
+                              <span className="font-semibold">{formatCurrency(partner2FinalSuper || 0)}</span>
+                            </div>
+                            {partner2TotalPension !== null && (
+                              <div className="flex justify-between text-xs items-center">
+                                <span className="text-gray-600 flex items-center">
+                                  Total Pension
+                                  <InfoTooltip text="Final year total pension: private pension + age pension allocation (or reversionary amount if deceased)." />
+                                </span>
+                                <span className="font-semibold">{formatCurrency(partner2TotalPension)}/yr</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
         {chartData.length > 0 && (
           <div>
             {/* Insufficient Funds Warning */}
@@ -4957,7 +5400,7 @@ const RetirementCalculator = () => {
         )}
 
        <div className="text-center text-sm text-gray-600 mt-6">
-         Australian Retirement Planning Tool v15.1 ·{' '}
+         Australian Retirement Planning Tool v15.2 ·{' '}
          <a
            href="mailto:aust-retirement-calculator@proton.me"
            className="underline"
