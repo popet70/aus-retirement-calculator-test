@@ -4509,10 +4509,24 @@ const RetirementCalculator = () => {
                     />
                   )}
                   
-                  <Line type="monotone" dataKey="Total Balance" stroke="#1e40af" strokeWidth={3} name="Median (50th)" />
-                  <Line type="monotone" dataKey="Main Super" stroke="#10b981" strokeWidth={2} />
-                  <Line type="monotone" dataKey="Buffer" stroke="#f59e0b" strokeWidth={2} />
-                  <Line type="monotone" dataKey="Cash" stroke="#8b5cf6" strokeWidth={2} />
+                  {/* Median line - use actual P50 for Monte Carlo, Total Balance otherwise */}
+                  {(useMonteCarlo || useHistoricalMonteCarlo) && enrichedChartData[0]?.['Balance P50'] !== undefined && (
+                    <Line type="monotone" dataKey="Balance P50" stroke="#1e40af" strokeWidth={2.5} name="Median (50th)" />
+                  )}
+                  {!useMonteCarlo && !useHistoricalMonteCarlo && (
+                    <Line type="monotone" dataKey="Total Balance" stroke="#1e40af" strokeWidth={3} name="Total Balance" />
+                  )}
+                  
+                  {/* Component breakdown - only show for non-Monte Carlo scenarios */}
+                  {!useMonteCarlo && !useHistoricalMonteCarlo && (
+                    <Line type="monotone" dataKey="Main Super" stroke="#10b981" strokeWidth={2} />
+                  )}
+                  {!useMonteCarlo && !useHistoricalMonteCarlo && (
+                    <Line type="monotone" dataKey="Buffer" stroke="#f59e0b" strokeWidth={2} />
+                  )}
+                  {!useMonteCarlo && !useHistoricalMonteCarlo && (
+                    <Line type="monotone" dataKey="Cash" stroke="#8b5cf6" strokeWidth={2} />
+                  )}
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -4597,8 +4611,20 @@ const RetirementCalculator = () => {
                     />
                   )}
                   
-                  <Line type="monotone" dataKey="Income" stroke="#047857" strokeWidth={3} name="Median Income (50th)" />
-                  <Line type="monotone" dataKey="Spending" stroke="#b91c1c" strokeWidth={3} name="Median Spending (50th)" />
+                  {/* Median lines - use actual P50 for Monte Carlo, regular data otherwise */}
+                  {(useMonteCarlo || useHistoricalMonteCarlo) && enrichedChartData[0]?.['Income P50'] !== undefined && (
+                    <Line type="monotone" dataKey="Income P50" stroke="#047857" strokeWidth={2} name="Median Income (50th)" />
+                  )}
+                  {!useMonteCarlo && !useHistoricalMonteCarlo && (
+                    <Line type="monotone" dataKey="Income" stroke="#047857" strokeWidth={2} name="Income" />
+                  )}
+                  
+                  {(useMonteCarlo || useHistoricalMonteCarlo) && enrichedChartData[0]?.['Spending P50'] !== undefined && (
+                    <Line type="monotone" dataKey="Spending P50" stroke="#b91c1c" strokeWidth={2} name="Median Spending (50th)" />
+                  )}
+                  {!useMonteCarlo && !useHistoricalMonteCarlo && (
+                    <Line type="monotone" dataKey="Spending" stroke="#b91c1c" strokeWidth={2} name="Spending" />
+                  )}
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
