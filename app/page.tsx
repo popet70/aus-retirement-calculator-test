@@ -102,7 +102,7 @@ const RetirementCalculator = () => {
     { description: 'In-home Care Setup', age: 84, amount: 15000 }
   ]);
   const [includeOneOffExpenses, setIncludeOneOffExpenses] = useState(true); // Toggle to enable/disable
-  const [showOneOffExpenses, setShowOneOffExpenses] = useState(true);
+  const [showOneOffExpenses, setShowOneOffExpenses] = useState(false);
   const [showPensionSummary, setShowPensionSummary] = useState(true);
   const [showPensionDetails, setShowPensionDetails] = useState(false);
   const [currentAge, setCurrentAge] = useState(55);
@@ -1527,28 +1527,52 @@ const RetirementCalculator = () => {
         partner1Super, // Individual partner 1 super balance
         partner2Super, // Individual partner 2 super balance
         // Partner pension = private pension (only if retired) + age pension allocation
-        partner1Pension: enableCoupleTracking && partner1Alive ? (
-          (partner1CurrentAge >= partner1.retirementAge ? partner1.pensionIncome * Math.pow(1 + cpiRate / 100, year - 1) : 0) + 
-          // Age pension allocation based on eligibility
-          (() => {
+        // When a partner dies, show reversionary pension continuing
+        partner1Pension: enableCoupleTracking ? (() => {
+          let pension = 0;
+          
+          // Private pension component
+          if (partner1Alive && partner1CurrentAge >= partner1.retirementAge) {
+            // Partner 1 alive and retired - gets full pension
+            pension += partner1.pensionIncome * Math.pow(1 + cpiRate / 100, year - 1);
+          } else if (!partner1Alive && partner2Alive) {
+            // Partner 1 dead, Partner 2 alive - show reversionary amount
+            pension += calculateReversionaryPension(partner1.pensionIncome, partner1.reversionaryRate) * Math.pow(1 + cpiRate / 100, year - 1);
+          }
+          
+          // Age pension component (only if Partner 1 alive)
+          if (partner1Alive) {
             const partner1Eligible = partner1CurrentAge >= activePensionParams.eligibilityAge;
             const partner2Eligible = partner2Alive && partner2CurrentAge >= activePensionParams.eligibilityAge;
-            if (partner1Eligible && partner2Eligible) return agePension / 2; // Both eligible: split 50/50
-            if (partner1Eligible && !partner2Eligible) return agePension; // Only partner1 eligible: gets full single rate
-            return 0; // Not eligible yet
-          })()
-        ) : 0,
-        partner2Pension: enableCoupleTracking && partner2Alive ? (
-          (partner2CurrentAge >= partner2.retirementAge ? partner2.pensionIncome * Math.pow(1 + cpiRate / 100, year - 1) : 0) + 
-          // Age pension allocation based on eligibility
-          (() => {
+            if (partner1Eligible && partner2Eligible) pension += agePension / 2; // Both eligible: split 50/50
+            else if (partner1Eligible && !partner2Eligible) pension += agePension; // Only partner1 eligible: gets full single rate
+          }
+          
+          return pension;
+        })() : 0,
+        
+        partner2Pension: enableCoupleTracking ? (() => {
+          let pension = 0;
+          
+          // Private pension component
+          if (partner2Alive && partner2CurrentAge >= partner2.retirementAge) {
+            // Partner 2 alive and retired - gets full pension
+            pension += partner2.pensionIncome * Math.pow(1 + cpiRate / 100, year - 1);
+          } else if (!partner2Alive && partner1Alive) {
+            // Partner 2 dead, Partner 1 alive - show reversionary amount
+            pension += calculateReversionaryPension(partner2.pensionIncome, partner2.reversionaryRate) * Math.pow(1 + cpiRate / 100, year - 1);
+          }
+          
+          // Age pension component (only if Partner 2 alive)
+          if (partner2Alive) {
             const partner1Eligible = partner1Alive && partner1CurrentAge >= activePensionParams.eligibilityAge;
             const partner2Eligible = partner2CurrentAge >= activePensionParams.eligibilityAge;
-            if (partner1Eligible && partner2Eligible) return agePension / 2; // Both eligible: split 50/50
-            if (partner2Eligible && !partner1Eligible) return agePension; // Only partner2 eligible: gets full single rate
-            return 0; // Not eligible yet
-          })()
-        ) : 0,
+            if (partner1Eligible && partner2Eligible) pension += agePension / 2; // Both eligible: split 50/50
+            else if (partner2Eligible && !partner1Eligible) pension += agePension; // Only partner2 eligible: gets full single rate
+          }
+          
+          return pension;
+        })() : 0,
         debtBalance: totalDebtBalance,
         debtPayment: totalDebtPayment,
         debtInterestPaid: totalDebtInterest,
