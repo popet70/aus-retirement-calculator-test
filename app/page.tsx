@@ -5595,6 +5595,7 @@ const RetirementCalculator = () => {
                       </ul>
                     </div>
                   </div>
+                  </div>
                   )}
                 </div>
               );
