@@ -107,6 +107,7 @@ const RetirementCalculator = () => {
   const [showPensionSummary, setShowPensionSummary] = useState(true);
   const [showPensionDetails, setShowPensionDetails] = useState(false);
   const [showExecutiveSummary, setShowExecutiveSummary] = useState(false);
+  const [showWhatIfHelp, setShowWhatIfHelp] = useState(false); // Default collapsed
   
   // What-If Scenario Comparison
   const [showWhatIfComparison, setShowWhatIfComparison] = useState(false);
@@ -5516,10 +5517,18 @@ const RetirementCalculator = () => {
                 </div>
                 
                 {/* Help Section */}
-                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded">
-                  <h4 className="font-bold text-blue-900 mb-2">📖 How to Use What-If Comparison</h4>
+                <div className="mt-4 border border-blue-200 rounded overflow-hidden">
+                  <button
+                    onClick={() => setShowWhatIfHelp(!showWhatIfHelp)}
+                    className="w-full px-4 py-3 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center justify-between"
+                  >
+                    <h4 className="font-bold text-blue-900">📖 How to Use What-If Comparison</h4>
+                    <span className="text-xl text-blue-900">{showWhatIfHelp ? '−' : '+'}</span>
+                  </button>
                   
-                  <div className="space-y-3 text-sm text-gray-700">
+                  {showWhatIfHelp && (
+                    <div className="p-4 bg-blue-50">
+                      <div className="space-y-3 text-sm text-gray-700">
                     <div>
                       <strong className="text-blue-800">Basic Workflow:</strong>
                       <ol className="list-decimal ml-5 mt-1 space-y-1">
@@ -5586,6 +5595,7 @@ const RetirementCalculator = () => {
                       </ul>
                     </div>
                   </div>
+                  )}
                 </div>
               </div>
               );
