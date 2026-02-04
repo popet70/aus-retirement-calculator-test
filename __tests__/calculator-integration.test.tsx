@@ -179,7 +179,7 @@ describe('Retirement Calculator - Integration Tests', () => {
       render(<RetirementCalculator />);
       
       // Historical data and Monte Carlo may be in advanced section
-      expect(screen.getByText(/Scenario/i)).toBeInTheDocument();
+      expect(screen.getByText(/Test Scenarios/i)).toBeInTheDocument();
     });
 
     it('shows splurge spending options', () => {
@@ -218,7 +218,7 @@ describe('Retirement Calculator - Integration Tests', () => {
       render(<RetirementCalculator />);
       
       // Should have scenario selector (Conservative, Moderate, etc.)
-      expect(screen.getByText(/Scenario/i)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /Test Scenarios/i })).toBeInTheDocument();
     });
 
     it('handles different return scenarios', () => {
