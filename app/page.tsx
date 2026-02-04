@@ -3064,7 +3064,7 @@ const RetirementCalculator = () => {
             <div>
               <label className="block text-sm font-medium mb-1">
                 Scenario to Model
-                <InfoTooltip text="Model different death scenarios to see how the surviving partner's finances are affected. Super transfers to survivor, pensions reduce to reversionary rate." />
+                <InfoTooltip text="Three scenarios: (1) BOTH ALIVE: Standard couple throughout retirement with couple spending and age pension rates. (2) PARTNER 1 DIES: At configured age, their super transfers to Partner 2, pension reduces to reversionary rate (e.g., 67%), spending drops to single-person level (default 65%), age pension becomes single rate (~$30k vs ~$44k couple). Partner 2 continues alone. (3) PARTNER 2 DIES: Same but Partner 1 survives. Use to stress-test survivor adequacy." />
               </label>
               <select
                 value={deathScenario}
@@ -4346,6 +4346,7 @@ const RetirementCalculator = () => {
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={(formalTestResults[selectedFormalTest as keyof typeof formalTestResults] as any).simulationData.map((r: any) => ({
                 year: r.year,
+                calendarYear: getCalendarYear(r.year),
                 age: r.age,
                 balance: toDisplayValue(r.totalBalance, r.year, r.cpiRate),
                 spending: toDisplayValue(r.spending, r.year, r.cpiRate),
@@ -4354,7 +4355,7 @@ const RetirementCalculator = () => {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="calendarYear" label={{ value: 'Year', position: 'insideBottom', offset: -5 }} />
                 <YAxis tickFormatter={(val) => ((val as number)/1000).toFixed(0) + 'k'} />
-                <Tooltip formatter={(val) => formatCurrency(val as number)} labelFormatter={(label) => `Year ${label}`} />
+                <Tooltip formatter={(val) => formatCurrency(val as number)} labelFormatter={(label) => `${label} (Year ${(formalTestResults[selectedFormalTest as keyof typeof formalTestResults] as any).simulationData.find((r: any) => getCalendarYear(r.year) === label)?.year || ''})`} />
                 <Legend />
                 <Line type="monotone" dataKey="balance" name="Total Balance" stroke="#2563eb" strokeWidth={2} />
                 <Line type="monotone" dataKey="income" name="Income" stroke="#10b981" strokeWidth={1} />
