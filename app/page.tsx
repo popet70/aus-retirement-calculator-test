@@ -69,6 +69,7 @@ const RetirementCalculator = () => {
   const [useHistoricalData, setUseHistoricalData] = useState(false);
   const [useMonteCarlo, setUseMonteCarlo] = useState(false);
   const [useFormalTest, setUseFormalTest] = useState(false);
+  const [useComprehensive, setUseComprehensive] = useState(false);
   const [historicalPeriod, setHistoricalPeriod] = useState('gfc2008');
   const [monteCarloRuns, setMonteCarloRuns] = useState(1000);
   const [expectedReturn, setExpectedReturn] = useState(7);
@@ -106,6 +107,34 @@ const RetirementCalculator = () => {
   const [showPensionSummary, setShowPensionSummary] = useState(true);
   const [showPensionDetails, setShowPensionDetails] = useState(false);
   const [showExecutiveSummary, setShowExecutiveSummary] = useState(false);
+  
+  // What-If Scenario Comparison
+  const [showWhatIfComparison, setShowWhatIfComparison] = useState(false);
+  const [savedScenarios, setSavedScenarios] = useState<Array<{
+    name: string;
+    timestamp: number;
+    params: {
+      mainSuper: number;
+      pension: number;
+      retirementAge: number;
+      baseSpending: number;
+      splurgeAmount: number;
+      splurgeDuration: number;
+      selectedScenario: number;
+      useHistoricalData: boolean;
+      historicalPeriod: string;
+      useMonteCarlo: boolean;
+      useFormalTest: boolean;
+    };
+    results: {
+      endingBalance: number;
+      yearsLasted: number;
+      success: boolean;
+      mcSuccessRate?: number;
+      formalTestsPassed?: number;
+      formalTestsTotal?: number;
+    };
+  }>>([]);
   const [currentAge, setCurrentAge] = useState(55);
   const [retirementAge, setRetirementAge] = useState(60);
   const [pensionRecipientType, setPensionRecipientType] = useState<'single' | 'couple'>('couple');
@@ -758,15 +787,22 @@ const RetirementCalculator = () => {
     
     if (enableCoupleTracking && pensionRecipientType === 'couple') {
       // Couple tracking mode - track super separately
-      partner1Super = partner1.superBalance;
-      partner2Super = partner2.superBalance;
+      // IMPORTANT: Super balance inputs represent balance AT each partner's retirement
+      // Pre-retirement partners start with 0 (we don't model pre-retirement growth/contributions)
+      // Their balance gets set to the input value when they actually retire
+      
+      const yearsUntilPartner1Retires = partner1.retirementAge - partner1.currentAge;
+      const yearsUntilPartner2Retires = partner2.retirementAge - partner2.currentAge;
+      const yearsUntilFirstRetirement = Math.min(yearsUntilPartner1Retires, yearsUntilPartner2Retires);
+      
+      // Initialize super balances based on who has already retired at Year 1
+      partner1Super = yearsUntilPartner1Retires === yearsUntilFirstRetirement ? partner1.superBalance : 0;
+      partner2Super = yearsUntilPartner2Retires === yearsUntilFirstRetirement ? partner2.superBalance : 0;
+      
       mainSuper = partner1Super + partner2Super; // Combined for display
       seqBuffer = sequencingBuffer;
       
-      // Calculate which partner retires FIRST chronologically
-      const yearsUntilPartner1Retires = partner1.retirementAge - partner1.currentAge;
-      const yearsUntilPartner2Retires = partner2.retirementAge - partner2.currentAge;
-      
+      // Calculate which partner retires FIRST chronologically (using vars from above)
       if (yearsUntilPartner1Retires <= yearsUntilPartner2Retires) {
         // Partner 1 retires first (or same time)
         startAge = partner1.retirementAge;
@@ -858,9 +894,15 @@ const RetirementCalculator = () => {
             // Still working - add pre-retirement income
             preRetirementIncome += partner1.preRetirementIncome;
           } else if (partner1CurrentAge === partner1.retirementAge || (year === 1 && partner1CurrentAge >= partner1.retirementAge)) {
-            // Retiring this year - add pension
+            // Retiring this year - add pension AND initialize super balance
             // Also add if Year 1 and already past retirement age
             currentPensionIncome += partner1.pensionIncome;
+            
+            // Initialize super balance to configured amount (only if not already set)
+            if (partner1Super === 0 && year > 1) {
+              partner1Super = partner1.superBalance;
+              mainSuper = partner1Super + partner2Super;
+            }
           }
           // If already retired (age > retirement), pension already in currentPensionIncome
         }
@@ -871,9 +913,15 @@ const RetirementCalculator = () => {
             // Still working - add pre-retirement income
             preRetirementIncome += partner2.preRetirementIncome;
           } else if (partner2CurrentAge === partner2.retirementAge || (year === 1 && partner2CurrentAge >= partner2.retirementAge)) {
-            // Retiring this year - add pension
+            // Retiring this year - add pension AND initialize super balance
             // Also add if Year 1 and already past retirement age
             currentPensionIncome += partner2.pensionIncome;
+            
+            // Initialize super balance to configured amount (only if not already set)
+            if (partner2Super === 0 && year > 1) {
+              partner2Super = partner2.superBalance;
+              mainSuper = partner1Super + partner2Super;
+            }
           }
           // If already retired (age > retirement), pension already in currentPensionIncome
         }
@@ -1505,9 +1553,14 @@ const RetirementCalculator = () => {
       const yearReturn = returnSequence[year - 1] || 0;
       
       if (enableCoupleTracking && pensionRecipientType === 'couple') {
-        // Apply returns to individual partner super balances
-        partner1Super = partner1Super * (1 + yearReturn / 100);
-        partner2Super = partner2Super * (1 + yearReturn / 100);
+        // Apply returns ONLY to retired partners' super balances
+        // Pre-retirement super is frozen at input value (avoids modeling contributions, fees, etc.)
+        if (partner1Alive && partner1CurrentAge >= partner1.retirementAge) {
+          partner1Super = partner1Super * (1 + yearReturn / 100);
+        }
+        if (partner2Alive && partner2CurrentAge >= partner2.retirementAge) {
+          partner2Super = partner2Super * (1 + yearReturn / 100);
+        }
         mainSuper = partner1Super + partner2Super; // Update combined total
       } else {
         // Simple mode - apply to mainSuper directly
@@ -4141,14 +4194,14 @@ const RetirementCalculator = () => {
           <h2 className="text-xl font-bold mb-3">Test Scenarios</h2>
           
           <div className="flex gap-2 mb-4 flex-wrap">
-            <button onClick={() => { setUseHistoricalData(false); setUseMonteCarlo(false); setUseFormalTest(false); setUseHistoricalMonteCarlo(false); }} className={'px-4 py-2 rounded ' + (!useHistoricalData && !useMonteCarlo && !useFormalTest && !useHistoricalMonteCarlo ? 'bg-blue-600 text-white' : 'bg-gray-200')}>Constant Return</button>
-            <button onClick={() => { setUseHistoricalData(true); setUseMonteCarlo(false); setUseFormalTest(false); setUseHistoricalMonteCarlo(false); }} className={'px-4 py-2 rounded ' + (useHistoricalData ? 'bg-orange-600 text-white' : 'bg-gray-200')}>Historical</button>
-            <button onClick={() => { setUseMonteCarlo(true); setUseHistoricalData(false); setUseFormalTest(false); setUseHistoricalMonteCarlo(false); setMonteCarloResults(null); }} className={'px-4 py-2 rounded ' + (useMonteCarlo ? 'bg-green-600 text-white' : 'bg-gray-200')}>Monte Carlo</button>
-            <button onClick={() => { setUseHistoricalMonteCarlo(true); setUseHistoricalData(false); setUseMonteCarlo(false); setUseFormalTest(false); setHistoricalMonteCarloResults(null); }} className={'px-4 py-2 rounded text-sm ' + (useHistoricalMonteCarlo ? 'bg-teal-600 text-white' : 'bg-gray-200')}>
+            <button onClick={() => { setUseHistoricalData(false); setUseMonteCarlo(false); setUseFormalTest(false); setUseHistoricalMonteCarlo(false); setUseComprehensive(false); }} className={'px-4 py-2 rounded ' + (!useHistoricalData && !useMonteCarlo && !useFormalTest && !useHistoricalMonteCarlo && !useComprehensive ? 'bg-blue-600 text-white' : 'bg-gray-200')}>Constant Return</button>
+            <button onClick={() => { setUseHistoricalData(true); setUseMonteCarlo(false); setUseFormalTest(false); setUseHistoricalMonteCarlo(false); setUseComprehensive(false); }} className={'px-4 py-2 rounded ' + (useHistoricalData ? 'bg-orange-600 text-white' : 'bg-gray-200')}>Historical</button>
+            <button onClick={() => { setUseMonteCarlo(true); setUseHistoricalData(false); setUseFormalTest(false); setUseHistoricalMonteCarlo(false); setUseComprehensive(false); setMonteCarloResults(null); }} className={'px-4 py-2 rounded ' + (useMonteCarlo ? 'bg-green-600 text-white' : 'bg-gray-200')}>Monte Carlo</button>
+            <button onClick={() => { setUseHistoricalMonteCarlo(true); setUseHistoricalData(false); setUseMonteCarlo(false); setUseFormalTest(false); setUseComprehensive(false); setHistoricalMonteCarloResults(null); }} className={'px-4 py-2 rounded text-sm ' + (useHistoricalMonteCarlo ? 'bg-teal-600 text-white' : 'bg-gray-200')}>
               Historical MC
               <InfoTooltip text="Monte Carlo using 98 years of verified S&P 500 data from Shiller/Ibbotson (1928-2025)" />
             </button>
-            <button onClick={() => { setUseFormalTest(true); setUseHistoricalData(false); setUseMonteCarlo(false); setUseHistoricalMonteCarlo(false); setFormalTestResults(null); }} className={'px-4 py-2 rounded ' + (useFormalTest ? 'bg-purple-600 text-white' : 'bg-gray-200')}>Formal Tests</button>
+            <button onClick={() => { setUseFormalTest(true); setUseHistoricalData(false); setUseMonteCarlo(false); setUseHistoricalMonteCarlo(false); setUseComprehensive(false); setFormalTestResults(null); }} className={'px-4 py-2 rounded ' + (useFormalTest ? 'bg-purple-600 text-white' : 'bg-gray-200')}>Formal Tests</button>
           </div>
           
           {!useHistoricalData && !useMonteCarlo && !useFormalTest && !useHistoricalMonteCarlo && (
@@ -4707,7 +4760,15 @@ const RetirementCalculator = () => {
               let scenarioIcon = '';
               let scenarioContext = '';
               
-              if (useHistoricalMonteCarlo && historicalMonteCarloResults) {
+              if (useComprehensive && monteCarloResults && formalTestResults) {
+                scenarioName = 'Comprehensive Analysis';
+                scenarioIcon = '🎯';
+                const passedTests = Object.values(formalTestResults).filter((t: any) => t.passed).length;
+                const totalTests = Object.keys(formalTestResults).length;
+                scenarioContext = success 
+                  ? `Median MC succeeded (${(mcSuccess || 0).toFixed(0)}% success rate) • Passed ${passedTests}/${totalTests} formal tests` 
+                  : `Median MC failed (${(mcSuccess || 0).toFixed(0)}% success rate) • Passed ${passedTests}/${totalTests} formal tests`;
+              } else if (useHistoricalMonteCarlo && historicalMonteCarloResults) {
                 scenarioName = 'Historical Monte Carlo';
                 scenarioIcon = '🎲';
                 scenarioContext = success 
@@ -5055,6 +5116,487 @@ const RetirementCalculator = () => {
                 </div>
               );
             })()}
+          </div>
+        )}
+
+        {/* What-If Scenario Comparison */}
+        {chartData.length > 0 && (
+          <div className="mb-6">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowWhatIfComparison(!showWhatIfComparison)}
+                className="px-4 py-3 bg-gradient-to-r from-purple-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 border border-purple-200 rounded-lg flex items-center gap-2 font-semibold text-gray-800 transition-colors"
+              >
+                <span>🔄 What-If Comparison</span>
+                <InfoTooltip text="Compare different scenarios side-by-side to understand how changes in parameters affect outcomes. Save up to 5 scenarios with different super balances, spending levels, retirement ages, or return assumptions. Use Comprehensive Analysis to run both Monte Carlo AND Formal Tests together for complete risk assessment." />
+                <span className="text-xs font-normal text-gray-600">
+                  ({savedScenarios.length} saved scenario{savedScenarios.length !== 1 ? 's' : ''})
+                </span>
+                <span className="text-xl ml-auto">{showWhatIfComparison ? '−' : '+'}</span>
+              </button>
+              
+              <button
+                onClick={() => {
+                  // Run both Monte Carlo and Formal Tests, then save
+                  const mcResults = runMonteCarlo();
+                  const ftResults = runFormalTests();
+                  setMonteCarloResults(mcResults);
+                  setFormalTestResults(ftResults);
+                  
+                  // Wait a bit for state to update, then save
+                  setTimeout(() => {
+                    const saveSuper = enableCoupleTracking && pensionRecipientType === 'couple' 
+                      ? partner1.superBalance + partner2.superBalance 
+                      : mainSuperBalance;
+                    const savePension = enableCoupleTracking && pensionRecipientType === 'couple'
+                      ? partner1.pensionIncome + partner2.pensionIncome
+                      : totalPensionIncome;
+                    const saveRetirementAge = enableCoupleTracking && pensionRecipientType === 'couple'
+                      ? Math.min(partner1.retirementAge, partner2.retirementAge)
+                      : retirementAge;
+                      
+                    const newScenario = {
+                      name: `Comprehensive ${savedScenarios.length + 1}`,
+                      timestamp: Date.now(),
+                      params: {
+                        mainSuper: saveSuper,
+                        pension: savePension,
+                        retirementAge: saveRetirementAge,
+                        baseSpending: baseSpending,
+                        splurgeAmount: splurgeAmount,
+                        splurgeDuration: splurgeDuration,
+                        selectedScenario: selectedScenario,
+                        useHistoricalData: false,
+                        historicalPeriod: '',
+                        useMonteCarlo: true,
+                        useFormalTest: true,
+                      },
+                      results: {
+                        endingBalance: simulationResults[simulationResults.length - 1]?.totalBalance || 0,
+                        yearsLasted: simulationResults.length,
+                        success: simulationResults.length >= 35 && (simulationResults[simulationResults.length - 1]?.totalBalance || 0) >= 0,
+                        mcSuccessRate: mcResults?.successRate,
+                        formalTestsPassed: ftResults ? Object.values(ftResults).filter((t: any) => t.passed).length : 0,
+                        formalTestsTotal: ftResults ? Object.keys(ftResults).length : 0,
+                      }
+                    };
+                    
+                    if (savedScenarios.length >= 5) {
+                      alert('Maximum 5 scenarios. Please delete one first.');
+                    } else {
+                      setSavedScenarios([...savedScenarios, newScenario]);
+                      setShowWhatIfComparison(true);
+                    }
+                  }, 100);
+                }}
+                className="px-4 py-3 bg-gradient-to-r from-green-600 to-purple-600 hover:from-green-700 hover:to-purple-700 text-white rounded-lg font-bold shadow-lg transition-colors flex items-center gap-2"
+                title="Run both Monte Carlo and All Formal Tests, then save for comparison"
+              >
+                🎯 Run Comprehensive Analysis
+              </button>
+              
+              <button
+                onClick={() => {
+                  // Compute values that handle couple tracking mode
+                  const saveSuper = enableCoupleTracking && pensionRecipientType === 'couple' 
+                    ? partner1.superBalance + partner2.superBalance 
+                    : mainSuperBalance;
+                  const savePension = enableCoupleTracking && pensionRecipientType === 'couple'
+                    ? partner1.pensionIncome + partner2.pensionIncome
+                    : totalPensionIncome;
+                  const saveRetirementAge = enableCoupleTracking && pensionRecipientType === 'couple'
+                    ? Math.min(partner1.retirementAge, partner2.retirementAge)
+                    : retirementAge;
+                    
+                  const currentScenario = {
+                    name: `Scenario ${savedScenarios.length + 1}`,
+                    timestamp: Date.now(),
+                    params: {
+                      mainSuper: saveSuper,
+                      pension: savePension,
+                      retirementAge: saveRetirementAge,
+                      baseSpending: baseSpending,
+                      splurgeAmount: splurgeAmount,
+                      splurgeDuration: splurgeDuration,
+                      selectedScenario: selectedScenario,
+                      useHistoricalData: useHistoricalData,
+                      historicalPeriod: historicalPeriod,
+                      useMonteCarlo: useMonteCarlo,
+                      useFormalTest: useFormalTest,
+                    },
+                    results: {
+                      endingBalance: simulationResults[simulationResults.length - 1]?.totalBalance || 0,
+                      yearsLasted: simulationResults.length,
+                      success: simulationResults.length >= 35 && (simulationResults[simulationResults.length - 1]?.totalBalance || 0) >= 0,
+                      mcSuccessRate: (useMonteCarlo || useComprehensive) ? monteCarloResults?.successRate : useHistoricalMonteCarlo ? historicalMonteCarloResults?.successRate : undefined,
+                      formalTestsPassed: (useFormalTest || useComprehensive) && formalTestResults ? Object.values(formalTestResults).filter((t: any) => t.passed).length : undefined,
+                      formalTestsTotal: (useFormalTest || useComprehensive) && formalTestResults ? Object.keys(formalTestResults).length : undefined,
+                    }
+                  };
+                  
+                  if (savedScenarios.length >= 5) {
+                    alert('Maximum 5 scenarios. Please delete one first.');
+                  } else {
+                    setSavedScenarios([...savedScenarios, currentScenario]);
+                    setShowWhatIfComparison(true);
+                  }
+                }}
+                className="px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
+                title="Save current scenario for comparison"
+              >
+                💾 Save Current Scenario
+              </button>
+            </div>
+            
+            {showWhatIfComparison && savedScenarios.length > 0 && simulationResults && simulationResults.length > 0 && (() => {
+              // Compute current scenario stats for comparison
+              const currentScenario = {
+                endingBalance: simulationResults[simulationResults.length - 1]?.totalBalance || 0,
+                yearsLasted: simulationResults.length,
+                success: simulationResults.length >= 35 && (simulationResults[simulationResults.length - 1]?.totalBalance || 0) >= 0,
+                mcSuccessRate: (useMonteCarlo || useComprehensive) ? monteCarloResults?.successRate : useHistoricalMonteCarlo ? historicalMonteCarloResults?.successRate : undefined,
+                formalTestsPassed: (useFormalTest || useComprehensive) && formalTestResults ? Object.values(formalTestResults).filter((t: any) => t.passed).length : undefined,
+                formalTestsTotal: (useFormalTest || useComprehensive) && formalTestResults ? Object.keys(formalTestResults).length : undefined,
+              };
+              
+              // Compute current input parameters (handle couple tracking)
+              const currentSuper = enableCoupleTracking && pensionRecipientType === 'couple' 
+                ? partner1.superBalance + partner2.superBalance 
+                : mainSuperBalance;
+              const currentPension = enableCoupleTracking && pensionRecipientType === 'couple'
+                ? partner1.pensionIncome + partner2.pensionIncome
+                : totalPensionIncome;
+              const currentRetirementAge = enableCoupleTracking && pensionRecipientType === 'couple'
+                ? Math.min(partner1.retirementAge, partner2.retirementAge)
+                : retirementAge;
+              
+              return (
+              <div className="mt-4 p-6 bg-white border border-purple-200 rounded-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-bold text-purple-900">📊 Scenario Comparison</h3>
+                  <button
+                    onClick={() => {
+                      if (confirm('Clear all saved scenarios?')) {
+                        setSavedScenarios([]);
+                      }
+                    }}
+                    className="px-3 py-1 bg-red-100 hover:bg-red-200 text-red-800 rounded text-sm"
+                  >
+                    Clear All
+                  </button>
+                </div>
+                
+                {/* Comparison Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-purple-50 border-b-2 border-purple-200">
+                        <th className="text-left p-3 font-bold text-purple-900">Metric</th>
+                        <th className="text-center p-3 font-bold text-blue-900 bg-blue-50">Current</th>
+                        {savedScenarios.map((scenario, idx) => (
+                          <th key={idx} className="text-center p-3 font-bold text-gray-800">
+                            <div className="flex flex-col items-center gap-1">
+                              <input
+                                type="text"
+                                value={scenario.name}
+                                onChange={(e) => {
+                                  const updated = [...savedScenarios];
+                                  updated[idx].name = e.target.value;
+                                  setSavedScenarios(updated);
+                                }}
+                                className="w-32 px-2 py-1 border rounded text-center font-semibold"
+                              />
+                              <button
+                                onClick={() => {
+                                  setSavedScenarios(savedScenarios.filter((_, i) => i !== idx));
+                                }}
+                                className="text-xs text-red-600 hover:text-red-800"
+                              >
+                                🗑️ Delete
+                              </button>
+                            </div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Key Results */}
+                      <tr className="bg-gray-50">
+                        <td colSpan={savedScenarios.length + 2} className="p-2 font-bold text-gray-700">
+                          📈 Key Results
+                        </td>
+                      </tr>
+                      
+                      {/* Success/Fail */}
+                      <tr className="border-b border-gray-200">
+                        <td className="p-3 font-medium">Success/Fail</td>
+                        <td className="p-3 text-center bg-blue-50">
+                          <span className={`font-bold ${currentScenario.success ? 'text-green-700' : 'text-red-700'}`}>
+                            {currentScenario.success ? '✅ Pass' : '❌ Fail'}
+                          </span>
+                        </td>
+                        {savedScenarios.map((scenario, idx) => (
+                          <td key={idx} className="p-3 text-center">
+                            <span className={`font-bold ${scenario.results.success ? 'text-green-700' : 'text-red-700'}`}>
+                              {scenario.results.success ? '✅ Pass' : '❌ Fail'}
+                            </span>
+                          </td>
+                        ))}
+                      </tr>
+                      
+                      {/* Ending Balance */}
+                      <tr className="border-b border-gray-200">
+                        <td className="p-3 font-medium">Ending Balance</td>
+                        <td className="p-3 text-center bg-blue-50 font-semibold">
+                          {formatCurrency(currentScenario.endingBalance)}
+                        </td>
+                        {savedScenarios.map((scenario, idx) => (
+                          <td key={idx} className="p-3 text-center font-semibold">
+                            {formatCurrency(scenario.results.endingBalance)}
+                            <div className={`text-xs mt-1 ${
+                              scenario.results.endingBalance > currentScenario.endingBalance
+                                ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {scenario.results.endingBalance > currentScenario.endingBalance ? '▲' : '▼'}
+                              {formatCurrency(Math.abs(scenario.results.endingBalance - currentScenario.endingBalance))}
+                            </div>
+                          </td>
+                        ))}
+                      </tr>
+                      
+                      {/* Years Lasted */}
+                      <tr className="border-b border-gray-200">
+                        <td className="p-3 font-medium">Years Lasted</td>
+                        <td className="p-3 text-center bg-blue-50 font-semibold">
+                          {currentScenario.yearsLasted}
+                        </td>
+                        {savedScenarios.map((scenario, idx) => (
+                          <td key={idx} className="p-3 text-center font-semibold">
+                            {scenario.results.yearsLasted}
+                            <span className={`text-xs ml-2 ${
+                              scenario.results.yearsLasted > currentScenario.yearsLasted ? 'text-green-600' : 
+                              scenario.results.yearsLasted < currentScenario.yearsLasted ? 'text-red-600' : 'text-gray-500'
+                            }`}>
+                              {scenario.results.yearsLasted > currentScenario.yearsLasted ? '▲' : 
+                               scenario.results.yearsLasted < currentScenario.yearsLasted ? '▼' : '═'}
+                            </span>
+                          </td>
+                        ))}
+                      </tr>
+                      
+                      {/* Monte Carlo Success Rate */}
+                      <tr className="border-b border-gray-200">
+                        <td className="p-3 font-medium">
+                          Parametric MC Success Rate
+                          <InfoTooltip text="Percentage of parametric Monte Carlo simulations that succeeded (uses Expected Return ± Volatility parameters). Different from Historical MC which samples real S&P 500 data." />
+                        </td>
+                        <td className="p-3 text-center bg-blue-50 font-semibold">
+                          {currentScenario.mcSuccessRate !== undefined ? (
+                            <span className={`${
+                              currentScenario.mcSuccessRate >= 90 ? 'text-green-700' :
+                              currentScenario.mcSuccessRate >= 75 ? 'text-amber-700' : 'text-red-700'
+                            }`}>
+                              {currentScenario.mcSuccessRate.toFixed(1)}%
+                            </span>
+                          ) : '—'}
+                        </td>
+                          {savedScenarios.map((scenario, idx) => (
+                            <td key={idx} className="p-3 text-center font-semibold">
+                              {scenario.results.mcSuccessRate !== undefined ? (
+                                <span className={`${
+                                  scenario.results.mcSuccessRate >= 90 ? 'text-green-700' :
+                                  scenario.results.mcSuccessRate >= 75 ? 'text-amber-700' : 'text-red-700'
+                                }`}>
+                                  {scenario.results.mcSuccessRate.toFixed(1)}%
+                                </span>
+                              ) : '—'}
+                            </td>
+                          ))}
+                        </tr>
+                      
+                      {/* Formal Tests Passed */}
+                      <tr className="border-b border-gray-200">
+                        <td className="p-3 font-medium">Formal Tests Passed</td>
+                          <td className="p-3 text-center bg-blue-50 font-semibold">
+                            {currentScenario.formalTestsPassed !== undefined ? (
+                              <span>
+                                {currentScenario.formalTestsPassed} / {currentScenario.formalTestsTotal}
+                              </span>
+                            ) : '—'}
+                          </td>
+                          {savedScenarios.map((scenario, idx) => (
+                            <td key={idx} className="p-3 text-center font-semibold">
+                              {scenario.results.formalTestsPassed !== undefined ? (
+                                <span>
+                                  {scenario.results.formalTestsPassed} / {scenario.results.formalTestsTotal}
+                                </span>
+                              ) : '—'}
+                            </td>
+                          ))}
+                        </tr>
+                      
+                      {/* Input Parameters */}
+                      <tr className="bg-gray-50">
+                        <td colSpan={savedScenarios.length + 2} className="p-2 font-bold text-gray-700">
+                          ⚙️ Input Parameters
+                        </td>
+                      </tr>
+                      
+                      <tr className="border-b border-gray-200">
+                        <td className="p-3 font-medium">Main Super Balance</td>
+                        <td className="p-3 text-center bg-blue-50">{formatCurrency(currentSuper)}</td>
+                        {savedScenarios.map((scenario, idx) => (
+                          <td key={idx} className="p-3 text-center">{formatCurrency(scenario.params.mainSuper)}</td>
+                        ))}
+                      </tr>
+                      
+                      <tr className="border-b border-gray-200">
+                        <td className="p-3 font-medium">PSS/CSS Pension</td>
+                        <td className="p-3 text-center bg-blue-50">{formatCurrency(currentPension)}/yr</td>
+                        {savedScenarios.map((scenario, idx) => (
+                          <td key={idx} className="p-3 text-center">{formatCurrency(scenario.params.pension)}/yr</td>
+                        ))}
+                      </tr>
+                      
+                      <tr className="border-b border-gray-200">
+                        <td className="p-3 font-medium">Retirement Age</td>
+                        <td className="p-3 text-center bg-blue-50">{currentRetirementAge}</td>
+                        {savedScenarios.map((scenario, idx) => (
+                          <td key={idx} className="p-3 text-center">{scenario.params.retirementAge}</td>
+                        ))}
+                      </tr>
+                      
+                      <tr className="border-b border-gray-200">
+                        <td className="p-3 font-medium">Base Annual Spending</td>
+                        <td className="p-3 text-center bg-blue-50">{formatCurrency(baseSpending)}/yr</td>
+                        {savedScenarios.map((scenario, idx) => (
+                          <td key={idx} className="p-3 text-center">{formatCurrency(scenario.params.baseSpending)}/yr</td>
+                        ))}
+                      </tr>
+                      
+                      <tr className="border-b border-gray-200">
+                        <td className="p-3 font-medium">Splurge Amount</td>
+                        <td className="p-3 text-center bg-blue-50">
+                          {splurgeAmount > 0 ? `${formatCurrency(splurgeAmount)}/yr × ${splurgeDuration}y` : 'None'}
+                        </td>
+                        {savedScenarios.map((scenario, idx) => (
+                          <td key={idx} className="p-3 text-center">
+                            {scenario.params.splurgeAmount > 0 
+                              ? `${formatCurrency(scenario.params.splurgeAmount)}/yr × ${scenario.params.splurgeDuration}y` 
+                              : 'None'}
+                          </td>
+                        ))}
+                      </tr>
+                      
+                      <tr className="border-b border-gray-200">
+                        <td className="p-3 font-medium">Return Scenario</td>
+                        <td className="p-3 text-center bg-blue-50">
+                          {useMonteCarlo ? 'Monte Carlo' : 
+                           useHistoricalMonteCarlo ? 'Historical MC' :
+                           useFormalTest ? 'Formal Tests' :
+                           useHistoricalData ? `Historical ${historicalPeriod}` : 
+                           `Constant ${selectedScenario}%`}
+                        </td>
+                        {savedScenarios.map((scenario, idx) => (
+                          <td key={idx} className="p-3 text-center">
+                            {scenario.params.useMonteCarlo ? 'Monte Carlo' :
+                             scenario.params.useFormalTest ? 'Formal Tests' :
+                             scenario.params.useHistoricalData ? `Historical ${scenario.params.historicalPeriod}` :
+                             `Constant ${scenario.params.selectedScenario}%`}
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                
+                <div className="mt-4 p-3 bg-purple-50 rounded text-sm text-gray-700">
+                  <strong>💡 Tips:</strong> Change parameters above, then click "Save Current Scenario" to compare different what-if scenarios side-by-side.
+                  Green ▲ indicates improvement over current, red ▼ indicates worse.
+                </div>
+                
+                {/* Help Section */}
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded">
+                  <h4 className="font-bold text-blue-900 mb-2">📖 How to Use What-If Comparison</h4>
+                  
+                  <div className="space-y-3 text-sm text-gray-700">
+                    <div>
+                      <strong className="text-blue-800">Basic Workflow:</strong>
+                      <ol className="list-decimal ml-5 mt-1 space-y-1">
+                        <li>Set up your baseline scenario with initial parameters</li>
+                        <li>Click "💾 Save Current Scenario" to capture baseline</li>
+                        <li>Modify one or more parameters (e.g., reduce spending by $10k/year)</li>
+                        <li>Click "💾 Save Current Scenario" again to save variant</li>
+                        <li>Repeat for up to 5 total scenarios</li>
+                        <li>Compare results side-by-side in the table</li>
+                      </ol>
+                    </div>
+                    
+                    <div>
+                      <strong className="text-blue-800">Key Parameters to Vary:</strong>
+                      <ul className="list-disc ml-5 mt-1 space-y-1">
+                        <li><strong>Super Balance:</strong> Test lower/higher starting balances</li>
+                        <li><strong>Base Spending:</strong> See impact of more frugal/generous lifestyle</li>
+                        <li><strong>Retirement Age:</strong> Compare retiring at 60 vs 65</li>
+                        <li><strong>PSS/CSS Pension:</strong> Model different pension amounts</li>
+                        <li><strong>Splurge Spending:</strong> Test major expense scenarios</li>
+                        <li><strong>Return Scenarios:</strong> Compare optimistic vs pessimistic returns</li>
+                      </ul>
+                    </div>
+                    
+                    <div className="bg-green-50 border border-green-300 rounded p-3">
+                      <strong className="text-green-900">✅ Comprehensive Analysis (Above)</strong>
+                      <p className="mt-1">
+                        Use the <strong>🎯 Run Comprehensive Analysis</strong> button above to run both <strong>Parametric Monte Carlo</strong> AND 
+                        all <strong>9 Formal Tests</strong> simultaneously! This automatically saves a scenario with both metrics filled in.
+                      </p>
+                      <div className="mt-2 text-sm">
+                        <strong>What it does:</strong>
+                        <ul className="list-disc ml-5 mt-1">
+                          <li>Runs 1,000 parametric MC simulations (using your Expected Return & Volatility settings)</li>
+                          <li>Runs all 9 Formal Stress Tests (crash scenarios, longevity, inflation, etc.)</li>
+                          <li>Automatically saves scenario with <strong>both</strong> MC success rate and formal tests passed</li>
+                          <li>Takes ~5-10 seconds total</li>
+                        </ul>
+                      </div>
+                      <p className="mt-2 text-xs text-gray-700">
+                        <strong>Note:</strong> Individual test scenario buttons (Monte Carlo, Historical MC, Formal Tests) run one test type at a time. 
+                        Comprehensive Analysis is specifically for What-If comparisons requiring complete risk assessment.
+                      </p>
+                    </div>
+                    
+                    <div>
+                      <strong className="text-blue-800">Understanding the Metrics:</strong>
+                      <ul className="list-disc ml-5 mt-1 space-y-1">
+                        <li><strong>Success/Fail:</strong> Portfolio lasts to target age with balance ≥ $0</li>
+                        <li><strong>Ending Balance:</strong> Portfolio value at end of simulation (real or nominal $)</li>
+                        <li><strong>Years Lasted:</strong> How many years portfolio sustained spending</li>
+                        <li><strong>Parametric MC Success Rate:</strong> % of parametric Monte Carlo simulations that succeeded (uses Expected Return ± Volatility). Shows "—" if not MC or Comprehensive mode.</li>
+                        <li><strong>Formal Tests Passed:</strong> X / Y tests passed (shown as "—" if not Formal Tests)</li>
+                      </ul>
+                    </div>
+                    
+                    <div>
+                      <strong className="text-blue-800">Management:</strong>
+                      <ul className="list-disc ml-5 mt-1">
+                        <li>Click scenario names to rename them (e.g., "Conservative", "Aggressive", "Base Case")</li>
+                        <li>🗑️ Delete individual scenarios you no longer need</li>
+                        <li>"Clear All" removes all saved scenarios at once</li>
+                        <li>Maximum 5 scenarios - delete one to add more</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              );
+            })()}
+            
+            {showWhatIfComparison && savedScenarios.length === 0 && (
+              <div className="mt-4 p-6 bg-purple-50 border border-purple-200 rounded-lg text-center">
+                <p className="text-gray-700 mb-2">No scenarios saved yet.</p>
+                <p className="text-sm text-gray-600">Click "Save Current Scenario" to start comparing different what-if scenarios.</p>
+              </div>
+            )}
           </div>
         )}
 
