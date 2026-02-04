@@ -5559,9 +5559,9 @@ const RetirementCalculator = () => {
                     </div>
                     
                     <div className="bg-green-50 border border-green-300 rounded p-3">
-                      <strong className="text-green-900">✅ Comprehensive Analysis (Above)</strong>
+                      <strong className="text-green-900">✅ Comprehensive Analysis</strong>
                       <p className="mt-1">
-                        Use the <strong>🎯 Run Comprehensive Analysis</strong> button above to run both <strong>Parametric Monte Carlo</strong> AND 
+                        Use the <strong>🎯 Run Comprehensive Analysis</strong> button (at the top of this panel) to run both <strong>Parametric Monte Carlo</strong> AND 
                         all <strong>9 Formal Tests</strong> simultaneously! This automatically saves a scenario with both metrics filled in.
                       </p>
                       <div className="mt-2 text-sm">
@@ -5574,7 +5574,7 @@ const RetirementCalculator = () => {
                         </ul>
                       </div>
                       <p className="mt-2 text-xs text-gray-700">
-                        <strong>Note:</strong> Individual test scenario buttons (Monte Carlo, Historical MC, Formal Tests) run one test type at a time. 
+                        <strong>Note:</strong> Individual test scenario buttons (Constant Return, Historical, Monte Carlo, Formal Tests) run one test type at a time. 
                         Comprehensive Analysis is specifically for What-If comparisons requiring complete risk assessment.
                       </p>
                     </div>
