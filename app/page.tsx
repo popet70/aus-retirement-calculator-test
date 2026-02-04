@@ -5510,7 +5510,12 @@ const RetirementCalculator = () => {
                     </tbody>
                   </table>
                 </div>
+              </div>
+              );
+            })()}
                 
+            {showWhatIfComparison && savedScenarios.length > 0 && (
+              <>
                 <div className="mt-4 p-3 bg-purple-50 rounded text-sm text-gray-700">
                   <strong>💡 Tips:</strong> Change parameters above, then click "Save Current Scenario" to compare different what-if scenarios side-by-side.
                   Green ▲ indicates improvement over current, red ▼ indicates worse.
@@ -5598,8 +5603,8 @@ const RetirementCalculator = () => {
                   </div>
                   )}
                 </div>
-              );
-            })()}
+              </>
+            )}
             
             {showWhatIfComparison && savedScenarios.length === 0 && (
               <div className="mt-4 p-6 bg-purple-50 border border-purple-200 rounded-lg text-center">
