@@ -6,6 +6,205 @@ import PdfExportButton from '@/components/PdfExportButton';
 import { PartnerDetails, createDefaultPartner, calculateAgePensionForCouple, calculateReversionaryPension } from '@/lib/utils/coupleTracking';
 import { CoupleTrackingPanel } from '@/components/CoupleTrackingPanel';
 
+// ============================================================================
+// IRREGULAR EXPENSE ENGINE
+// ============================================================================
+
+interface IrregularExpenseConfig {
+  category: 'transport' | 'housing' | 'medical';
+  description: string;
+  firstOccurrenceAge: number;
+  lastOccurrenceAge?: number;
+  recurrenceYears?: number;
+  timingVarianceYears?: number;
+  baseCost2024: number;
+  inflationRate: number;
+  costCoV: number;
+  annualProbability?: number;
+  probabilityByAge?: Array<{ age: number; probability: number }>;
+  isCumulative?: boolean;
+}
+
+interface IrregularExpenseYear {
+  transport: number;
+  housing: number;
+  medical: number;
+  total: number;
+  events: Array<{ category: string; description: string; amount: number }>;
+}
+
+class IrregularExpenseEngine {
+  private rng: () => number;
+  private expenseConfigs: IrregularExpenseConfig[];
+  
+  constructor(seed?: number) {
+    this.rng = this.createSeededRNG(seed || Math.random() * 1000000);
+    this.expenseConfigs = this.getDefaultExpenseConfigs();
+  }
+  
+  generateExpensePath(startAge: number, endAge: number, startYear: number): IrregularExpenseYear[] {
+    const years: IrregularExpenseYear[] = [];
+    const occurrenceTracker = new Map<string, number>();
+    const cumulativeTracker = new Set<string>();
+    
+    for (let age = startAge; age <= endAge; age++) {
+      const yearOffset = age - startAge;
+      const calendarYear = startYear + yearOffset;
+      
+      const yearExpenses: IrregularExpenseYear = {
+        transport: 0,
+        housing: 0,
+        medical: 0,
+        total: 0,
+        events: []
+      };
+      
+      for (const config of this.expenseConfigs) {
+        if (age < config.firstOccurrenceAge) continue;
+        if (config.lastOccurrenceAge && age > config.lastOccurrenceAge) continue;
+        if (config.isCumulative && cumulativeTracker.has(config.description)) continue;
+        
+        let expenseOccurs = false;
+        
+        if (config.recurrenceYears) {
+          expenseOccurs = this.checkRecurringExpense(config, age, occurrenceTracker);
+        } else if (config.probabilityByAge) {
+          const probability = this.interpolateProbability(config.probabilityByAge, age);
+          expenseOccurs = this.rng() < probability;
+        } else if (config.annualProbability) {
+          expenseOccurs = this.rng() < config.annualProbability;
+        }
+        
+        if (expenseOccurs) {
+          const yearsFromBase = calendarYear - 2024;
+          const inflatedMean = config.baseCost2024 * Math.pow(config.inflationRate, yearsFromBase);
+          const cost = this.drawLognormal(inflatedMean, config.costCoV);
+          
+          yearExpenses[config.category] += cost;
+          yearExpenses.total += cost;
+          yearExpenses.events.push({
+            category: config.category,
+            description: config.description,
+            amount: cost
+          });
+          
+          if (config.recurrenceYears) {
+            occurrenceTracker.set(config.description, age);
+          }
+          if (config.isCumulative) {
+            cumulativeTracker.add(config.description);
+          }
+        }
+      }
+      
+      years.push(yearExpenses);
+    }
+    
+    return years;
+  }
+  
+  private checkRecurringExpense(config: IrregularExpenseConfig, currentAge: number, tracker: Map<string, number>): boolean {
+    const lastOccurrence = tracker.get(config.description);
+    
+    if (!lastOccurrence) {
+      const expectedAge = config.firstOccurrenceAge;
+      const variance = config.timingVarianceYears || 0;
+      if (variance === 0) return currentAge === expectedAge;
+      const actualAge = Math.round(expectedAge + this.drawNormal(0, variance));
+      return currentAge === Math.max(config.firstOccurrenceAge, actualAge);
+    }
+    
+    const yearsSinceLastOccurrence = currentAge - lastOccurrence;
+    const expectedRecurrence = config.recurrenceYears!;
+    const variance = config.timingVarianceYears || 0;
+    
+    if (variance === 0) {
+      return yearsSinceLastOccurrence === expectedRecurrence;
+    }
+    
+    const deviation = Math.abs(yearsSinceLastOccurrence - expectedRecurrence);
+    const threshold = variance * 1.5;
+    
+    if (deviation <= threshold) {
+      const probability = Math.exp(-Math.pow(deviation / variance, 2) / 2);
+      return this.rng() < probability;
+    }
+    
+    return false;
+  }
+  
+  private interpolateProbability(curve: Array<{age: number, probability: number}>, age: number): number {
+    const sorted = [...curve].sort((a, b) => a.age - b.age);
+    if (age <= sorted[0].age) return sorted[0].probability;
+    if (age >= sorted[sorted.length - 1].age) return sorted[sorted.length - 1].probability;
+    
+    for (let i = 0; i < sorted.length - 1; i++) {
+      if (age >= sorted[i].age && age <= sorted[i + 1].age) {
+        const t = (age - sorted[i].age) / (sorted[i + 1].age - sorted[i].age);
+        return sorted[i].probability + t * (sorted[i + 1].probability - sorted[i].probability);
+      }
+    }
+    return 0;
+  }
+  
+  private drawLognormal(mean: number, cov: number): number {
+    const variance = Math.pow(mean * cov, 2);
+    const mu = Math.log(mean / Math.sqrt(1 + variance / (mean * mean)));
+    const sigma = Math.sqrt(Math.log(1 + variance / (mean * mean)));
+    const normal = this.drawNormal(0, 1);
+    return Math.exp(mu + sigma * normal);
+  }
+  
+  private drawNormal(mean: number, stddev: number): number {
+    const u1 = this.rng();
+    const u2 = this.rng();
+    const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    return mean + stddev * z0;
+  }
+  
+  private createSeededRNG(seed: number): () => number {
+    let state = seed;
+    return () => {
+      state = (state * 1103515245 + 12345) & 0x7fffffff;
+      return state / 0x7fffffff;
+    };
+  }
+  
+  private getDefaultExpenseConfigs(): IrregularExpenseConfig[] {
+    return [
+      // TRANSPORT
+      { category: 'transport', description: 'Vehicle replacement', firstOccurrenceAge: 60, recurrenceYears: 10, timingVarianceYears: 2, baseCost2024: 60000, inflationRate: 1.03, costCoV: 0.15 },
+      
+      // HOUSING
+      { category: 'housing', description: 'Roof replacement', firstOccurrenceAge: 65, recurrenceYears: 20, timingVarianceYears: 3, baseCost2024: 25000, inflationRate: 1.025, costCoV: 0.25 },
+      { category: 'housing', description: 'HVAC replacement', firstOccurrenceAge: 62, recurrenceYears: 15, timingVarianceYears: 2, baseCost2024: 15000, inflationRate: 1.025, costCoV: 0.20 },
+      { category: 'housing', description: 'Major painting/external', firstOccurrenceAge: 63, recurrenceYears: 12, timingVarianceYears: 2, baseCost2024: 20000, inflationRate: 1.025, costCoV: 0.20 },
+      { category: 'housing', description: 'Unexpected major repair', firstOccurrenceAge: 60, lastOccurrenceAge: 95, annualProbability: 0.02, baseCost2024: 30000, inflationRate: 1.025, costCoV: 0.40 },
+      
+      // MEDICAL
+      { category: 'medical', description: 'Major dental work', firstOccurrenceAge: 60, probabilityByAge: [{ age: 60, probability: 0.05 }, { age: 70, probability: 0.10 }, { age: 80, probability: 0.15 }, { age: 90, probability: 0.20 }], baseCost2024: 12000, inflationRate: 1.055, costCoV: 0.50 },
+      { category: 'medical', description: 'Hearing aids', firstOccurrenceAge: 70, recurrenceYears: 6, timingVarianceYears: 1, baseCost2024: 10000, inflationRate: 1.045, costCoV: 0.20 },
+      { category: 'medical', description: 'Private hospital excess/uncovered', firstOccurrenceAge: 60, probabilityByAge: [{ age: 60, probability: 0.10 }, { age: 70, probability: 0.15 }, { age: 80, probability: 0.20 }, { age: 85, probability: 0.25 }], baseCost2024: 15000, inflationRate: 1.055, costCoV: 0.60 },
+      { category: 'medical', description: 'Home modifications for aging', firstOccurrenceAge: 70, probabilityByAge: [{ age: 70, probability: 0.05 }, { age: 75, probability: 0.08 }, { age: 80, probability: 0.12 }, { age: 85, probability: 0.15 }], isCumulative: true, baseCost2024: 60000, inflationRate: 1.025, costCoV: 0.35 }
+      
+      // NOTE: Aged care RAD deposits are NOT included here - use the main "Aged Care Costs" 
+      // section for more accurate modeling of entry timing, annual costs, and refunds
+    ];
+  }
+  
+  setExpenseConfigs(configs: IrregularExpenseConfig[]): void {
+    this.expenseConfigs = configs;
+  }
+  
+  getExpenseConfigs(): IrregularExpenseConfig[] {
+    return [...this.expenseConfigs];
+  }
+}
+
+// ============================================================================
+// END IRREGULAR EXPENSE ENGINE
+// ============================================================================
+
 
 const InfoTooltip = ({ text }: { text: string }) => {
   return (
@@ -104,6 +303,7 @@ const RetirementCalculator = () => {
   ]);
   const [includeOneOffExpenses, setIncludeOneOffExpenses] = useState(true); // Toggle to enable/disable
   const [showOneOffExpenses, setShowOneOffExpenses] = useState(false);
+  const [useStochasticExpenses, setUseStochasticExpenses] = useState(false); // New: toggle for stochastic vs manual
   const [showPensionSummary, setShowPensionSummary] = useState(true);
   const [showPensionDetails, setShowPensionDetails] = useState(false);
   const [showExecutiveSummary, setShowExecutiveSummary] = useState(false);
@@ -770,7 +970,7 @@ const RetirementCalculator = () => {
     return monthlyPayment * 12;
   };
 
-  const runSimulation = (returnSequence: number[], cpiRate: number, healthShock: boolean, maxYears?: number) => {
+  const runSimulation = (returnSequence: number[], cpiRate: number, healthShock: boolean, maxYears?: number, irregularExpensePath?: IrregularExpenseYear[]) => {
     // Initialize with STARTING values (both partners alive initially in couple tracking mode)
     let mainSuper: number;
     let seqBuffer: number;
@@ -1158,9 +1358,16 @@ const RetirementCalculator = () => {
         radPaid = 0; // Reset after refund
       }
       
-      // Add one-off expenses for this age (not subject to guardrails)
+      // Add one-off/irregular expenses for this age
       let oneOffAddition = 0;
-      if (includeOneOffExpenses) {
+      if (useStochasticExpenses && irregularExpensePath) {
+        // Use stochastic irregular expenses from the generated path
+        const yearIndex = year - 1; // year is 1-indexed, array is 0-indexed
+        if (yearIndex >= 0 && yearIndex < irregularExpensePath.length) {
+          oneOffAddition = irregularExpensePath[yearIndex].total;
+        }
+      } else if (includeOneOffExpenses) {
+        // Use manual one-off expenses (original behavior)
         oneOffExpenses.forEach(expense => {
           if (expense.age === age) {
             oneOffAddition += expense.amount;
@@ -1579,6 +1786,7 @@ const RetirementCalculator = () => {
         yearReturn, cpiRate, guardrailStatus, currentSpendingBase,
         inAgedCare, agedCareAnnualCost: agedCareCosts.annualCost, radWithdrawn, radRefund,
         partnerAlive,
+        oneOffExpense: oneOffAddition, // Irregular/one-off expenses for this year
         partner1Super, // Individual partner 1 super balance
         partner2Super, // Individual partner 2 super balance
         // Partner pension = private pension (only if retired) + age pension allocation
@@ -1653,7 +1861,18 @@ const RetirementCalculator = () => {
         const randomReturn = expectedReturn + z0 * returnVolatility;
         returns.push(randomReturn);
       }
-      const result = runSimulation(returns, inflationRate, false, 35);
+      
+      // Generate irregular expense path if stochastic expenses enabled
+      let irregularExpensePath: IrregularExpenseYear[] | undefined = undefined;
+      if (useStochasticExpenses) {
+        const expenseEngine = new IrregularExpenseEngine(i); // Use simulation index as seed
+        const startAge = enableCoupleTracking && pensionRecipientType === 'couple' 
+          ? Math.min(partner1.currentAge, partner2.currentAge)
+          : currentAge;
+        irregularExpensePath = expenseEngine.generateExpensePath(startAge, startAge + 34, new Date().getFullYear());
+      }
+      
+      const result = runSimulation(returns, inflationRate, false, 35, irregularExpensePath);
       allResults.push(result);
       
       // Analyze if this scenario failed
@@ -1858,7 +2077,17 @@ const RetirementCalculator = () => {
           returns.push(historicalMarketData[startIdx + year].return);
         }
         
-        const result = runSimulation(returns, inflationRate, false, 35);
+        // Generate irregular expense path if stochastic expenses enabled
+        let irregularExpensePath: IrregularExpenseYear[] | undefined = undefined;
+        if (useStochasticExpenses) {
+          const expenseEngine = new IrregularExpenseEngine(i);
+          const startAge = enableCoupleTracking && pensionRecipientType === 'couple' 
+            ? Math.min(partner1.currentAge, partner2.currentAge)
+            : currentAge;
+          irregularExpensePath = expenseEngine.generateExpensePath(startAge, startAge + 34, new Date().getFullYear());
+        }
+        
+        const result = runSimulation(returns, inflationRate, false, 35, irregularExpensePath);
         allResults.push(result);
         
         // Track this unique block
@@ -1937,7 +2166,17 @@ const RetirementCalculator = () => {
           }
         }
         
-        const result = runSimulation(returns, inflationRate, false, 35);
+        // Generate irregular expense path if stochastic expenses enabled
+        let irregularExpensePath: IrregularExpenseYear[] | undefined = undefined;
+        if (useStochasticExpenses) {
+          const expenseEngine = new IrregularExpenseEngine(i);
+          const startAge = enableCoupleTracking && pensionRecipientType === 'couple' 
+            ? Math.min(partner1.currentAge, partner2.currentAge)
+            : currentAge;
+          irregularExpensePath = expenseEngine.generateExpensePath(startAge, startAge + 34, new Date().getFullYear());
+        }
+        
+        const result = runSimulation(returns, inflationRate, false, 35, irregularExpensePath);
         allResults.push(result);
       
       // Analyze if this scenario failed
@@ -2285,7 +2524,7 @@ const RetirementCalculator = () => {
     }
 
     // Determine which columns to include based on configuration
-    const hasAnyOneOffs = oneOffExpenses.length > 0 && oneOffExpenses.some(e => e.amount > 0);
+    const hasAnyOneOffs = useStochasticExpenses || (oneOffExpenses.length > 0 && oneOffExpenses.some(e => e.amount > 0));
     const hasSplurge = splurgeAmount > 0;
     const hasAgedCare = includeAgedCare;
     const hasDebt = includeDebt && debts.length > 0;
@@ -2322,7 +2561,7 @@ const RetirementCalculator = () => {
     headers.push('Current Spending Base (Real)');
     if (isJPMorgan) headers.push('Spending Multiplier');
     if (hasSplurge) headers.push('Splurge Addition');
-    if (hasAnyOneOffs) headers.push('One-Off Expenses');
+    if (hasAnyOneOffs) headers.push(useStochasticExpenses ? 'Irregular Expenses' : 'One-Off Expenses');
     if (hasHealthShock) headers.push('Health Shock Costs');
     if (hasAgedCare) headers.push('Aged Care Annual Costs');
     if (hasDebt) headers.push('Debt Payments');
@@ -2393,8 +2632,10 @@ const RetirementCalculator = () => {
       }
 
       
-      // Calculate one-offs
-      const oneOffTotal = oneOffExpenses.filter(e => e.age === r.age).reduce((sum, e) => sum + e.amount, 0);
+      // Calculate one-offs (use result.oneOffExpense if available, otherwise calculate from manual list)
+      const oneOffTotal = r.oneOffExpense !== undefined 
+        ? r.oneOffExpense 
+        : oneOffExpenses.filter(e => e.age === r.age).reduce((sum, e) => sum + e.amount, 0);
       
       // Calculate health shock (if year >= 15)
       const healthShockCost = (r.year >= 15) ? 30000 * Math.pow(1 + r.cpiRate / 100, r.year - 1) : 0;
@@ -2464,7 +2705,7 @@ const RetirementCalculator = () => {
       row.push(currentSpendingBaseReal.toFixed(2));
       if (isJPMorgan) row.push(actualSpendingMultiplier.toFixed(4));
       if (hasSplurge) row.push(splurgeAddition.toFixed(2));
-      if (hasAnyOneOffs) row.push(oneOffTotal.toFixed(2));
+      if (hasAnyOneOffs) row.push((oneOffTotal || 0).toFixed(2));
       if (hasHealthShock) row.push(healthShockCost.toFixed(2));
       if (hasAgedCare) row.push(agedCareAnnual.toFixed(2));
       if (hasDebt) row.push(debtPayment.toFixed(2));
@@ -3687,12 +3928,49 @@ const RetirementCalculator = () => {
         </div>
 
         <div className="bg-white border p-4 rounded mb-6">
+          <h2 className="text-xl font-bold mb-4">
+            Irregular Expenses
+            <InfoTooltip text="Model major lumpy expenses like vehicle replacements, home maintenance, medical costs. Choose stochastic (probabilistic with Monte Carlo) or manual one-off entries." />
+          </h2>
+          
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
+            <label className="flex items-start cursor-pointer">
+              <input 
+                type="checkbox"
+                checked={useStochasticExpenses}
+                onChange={(e) => setUseStochasticExpenses(e.target.checked)}
+                className="mr-2 mt-1"
+              />
+              <div>
+                <span className="text-sm font-medium text-gray-700">
+                  Use Stochastic Irregular Expenses (recommended with Monte Carlo)
+                </span>
+                <InfoTooltip text="Automatically models irregular expenses with realistic timing uncertainty and cost variation. Each Monte Carlo run gets a different expense path based on probabilities and age-dependent risks." />
+                {useStochasticExpenses && (
+                  <div className="mt-2 text-xs text-gray-600 space-y-1">
+                    <div><strong>Included expenses:</strong></div>
+                    <div>• Transport: Vehicle replacement every ~10 years ($60k base, varies ±15%)</div>
+                    <div>• Housing: Roof, HVAC, painting cycles + emergency repairs (2% annual)</div>
+                    <div>• Medical: Dental, hearing aids, hospital excess (increases with age)</div>
+                    <div>• Home mods: Accessibility updates (age-dependent probability, one-time)</div>
+                    <div className="mt-2 font-medium text-gray-700">Expected: ~$10-13k/year median, ~$17-22k/year 90th percentile</div>
+                    <div className="mt-2 text-xs text-blue-700 bg-blue-50 p-2 rounded border border-blue-200">
+                      ℹ️ <strong>Aged care costs:</strong> Not included here. Use the "Aged Care Costs" section below for accurate modeling of RAD deposits, annual fees, and refunds.
+                    </div>
+                  </div>
+                )}
+              </div>
+            </label>
+          </div>
+          
+          {!useStochasticExpenses && (
+            <>
           <div className="flex justify-between items-center mb-3">
             <div className="flex items-center gap-3">
-              <h2 className="text-xl font-bold">
-                One-Off Expenses
-                <InfoTooltip text="Single large expenses in specific years (e.g., car purchase, home repairs, wedding). Enter amounts in future dollars (the year they occur), not today's dollars. Not recurring." />
-              </h2>
+              <h3 className="text-lg font-bold">
+                Manual One-Off Expenses
+                <InfoTooltip text="Single large expenses in specific years. Enter amounts in future dollars (the year they occur), not today's dollars." />
+              </h3>
               <label className="flex items-center cursor-pointer">
                 <input
                   type="checkbox"
@@ -3796,6 +4074,8 @@ const RetirementCalculator = () => {
                 </div>
               )}
             </div>
+          )}
+          </>
           )}
         </div>
 
@@ -5961,7 +6241,7 @@ const RetirementCalculator = () => {
         )}
 
        <div className="text-center text-sm text-gray-600 mt-6">
-         Australian Retirement Planning Tool v15.2 ·{' '}
+         Australian Retirement Planning Tool v15.4 (Stochastic Irregular Expenses - No Aged Care Duplication) ·{' '}
          <a
            href="mailto:aust-retirement-calculator@proton.me"
            className="underline"
