@@ -3691,7 +3691,7 @@ const RetirementCalculator = () => {
             <div className="flex items-center gap-3">
               <h2 className="text-xl font-bold">
                 One-Off Expenses
-                <InfoTooltip text="Single large expenses in specific years (e.g., car purchase, home repairs, wedding). Not recurring." />
+                <InfoTooltip text="Single large expenses in specific years (e.g., car purchase, home repairs, wedding). Enter amounts in future dollars (the year they occur), not today's dollars. Not recurring." />
               </h2>
               <label className="flex items-center cursor-pointer">
                 <input
@@ -3747,7 +3747,10 @@ const RetirementCalculator = () => {
                       />
                     </div>
                     <div className="w-40">
-                      <label className="text-xs text-gray-600">Amount</label>
+                      <label className="text-xs text-gray-600">
+                        Amount (future $)
+                        <InfoTooltip text="Enter amount in dollars of the year it occurs (not today's dollars). For example, if entering $50k for age 70, that's $50k in year-70 dollars, already accounting for inflation." />
+                      </label>
                       <input 
                         type="number"
                         placeholder="Amount"
