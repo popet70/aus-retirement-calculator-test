@@ -2602,6 +2602,7 @@ const RetirementCalculator = () => {
     // Build data rows
     simulationResults.forEach((r: any, index: number) => {
       const calendarYear = getRetirementYear(retirementAge) + r.year - 1;
+      const cpiRate = r.cpiRate || inflationRate; // Fallback to global inflation rate
       
       // Previous year balances
       const prevMainSuper = index === 0 ? mainSuperBalance : simulationResults[index - 1].mainSuper;
@@ -2621,13 +2622,13 @@ const RetirementCalculator = () => {
         
         if (r.age >= splurgeStartAge && r.age <= splurgeEndAge) {
           // Full splurge period
-          splurgeAddition = splurgeAmount * Math.pow(1 + r.cpiRate / 100, r.year - 1);
+          splurgeAddition = splurgeAmount * Math.pow(1 + cpiRate / 100, r.year - 1);
         } else if (splurgeRampDownYears > 0 && r.age > splurgeEndAge && r.age <= rampDownEndAge) {
           // Ramp-down period
           const yearsIntoRampDown = r.age - splurgeEndAge;
           const rampDownFraction = 1 - (yearsIntoRampDown / splurgeRampDownYears);
           const rampDownAmount = splurgeAmount * rampDownFraction;
-          splurgeAddition = rampDownAmount * Math.pow(1 + r.cpiRate / 100, r.year - 1);
+          splurgeAddition = rampDownAmount * Math.pow(1 + cpiRate / 100, r.year - 1);
         }
       }
 
@@ -2638,7 +2639,7 @@ const RetirementCalculator = () => {
         : oneOffExpenses.filter(e => e.age === r.age).reduce((sum, e) => sum + e.amount, 0);
       
       // Calculate health shock (if year >= 15)
-      const healthShockCost = (r.year >= 15) ? 30000 * Math.pow(1 + r.cpiRate / 100, r.year - 1) : 0;
+      const healthShockCost = (r.year >= 15) ? 30000 * Math.pow(1 + cpiRate / 100, r.year - 1) : 0;
       
       // Aged care costs
       const agedCareAnnual = r.agedCareAnnualCost || 0;
@@ -2654,7 +2655,7 @@ const RetirementCalculator = () => {
       const superForMinimum = r.superDrawnForMinimum || 0;
       
       // Spending withdrawals
-      const netSpendingNeed = Math.max(0, r.spending - r.income);
+      const netSpendingNeed = Math.max(0, (r.spending || 0) - (r.income || 0));
       
       // Calculate withdrawal breakdown (Cash → Buffer → Super waterfall)
       const cashAvailable = prevCash + superForMinimum;
@@ -2726,24 +2727,24 @@ const RetirementCalculator = () => {
         // Check if each partner is retired and add their income
         if (partner1.pensionIncome > 0) {
           const partner1Pension = partner1Age >= partner1.retirementAge ? 
-            (partner1.pensionIncome * Math.pow(1 + r.cpiRate / 100, r.year - 1)) : 0;
+            (partner1.pensionIncome * Math.pow(1 + cpiRate / 100, r.year - 1)) : 0;
           row.push(partner1Pension.toFixed(2));
         }
         if (partner2.pensionIncome > 0) {
           const partner2Pension = partner2Age >= partner2.retirementAge ? 
-            (partner2.pensionIncome * Math.pow(1 + r.cpiRate / 100, r.year - 1)) : 0;
+            (partner2.pensionIncome * Math.pow(1 + cpiRate / 100, r.year - 1)) : 0;
           row.push(partner2Pension.toFixed(2));
         }
         
         // Pre-retirement income (only if not yet retired)
         if (partner1.preRetirementIncome > 0) {
           const partner1PreRetirement = partner1Age < partner1.retirementAge ? 
-            (partner1.preRetirementIncome * Math.pow(1 + r.cpiRate / 100, r.year - 1)) : 0;
+            (partner1.preRetirementIncome * Math.pow(1 + cpiRate / 100, r.year - 1)) : 0;
           row.push(partner1PreRetirement.toFixed(2));
         }
         if (partner2.preRetirementIncome > 0) {
           const partner2PreRetirement = partner2Age < partner2.retirementAge ? 
-            (partner2.preRetirementIncome * Math.pow(1 + r.cpiRate / 100, r.year - 1)) : 0;
+            (partner2.preRetirementIncome * Math.pow(1 + cpiRate / 100, r.year - 1)) : 0;
           row.push(partner2PreRetirement.toFixed(2));
         }
         
@@ -2753,7 +2754,7 @@ const RetirementCalculator = () => {
         if (totalPensionIncome > 0) row.push((r.pensionIncome || 0).toFixed(2));
       }
       if (includeAgePension) row.push((r.agePension || 0).toFixed(2));
-      row.push(r.income.toFixed(2), netSpendingNeed.toFixed(2));
+      row.push((r.income || 0).toFixed(2), netSpendingNeed.toFixed(2));
       
       // Withdrawals
       row.push(minDrawdownAmount.toFixed(2), cashUsed.toFixed(2), bufferUsed.toFixed(2), superUsedForSpending.toFixed(2));
@@ -2764,7 +2765,7 @@ const RetirementCalculator = () => {
       }
       
       // Returns and ending balances
-      row.push(r.yearReturn.toFixed(2), r.mainSuper.toFixed(2), r.seqBuffer.toFixed(2), r.cashAccount.toFixed(2), r.totalBalance.toFixed(2));
+      row.push((r.yearReturn || 0).toFixed(2), (r.mainSuper || 0).toFixed(2), (r.seqBuffer || 0).toFixed(2), (r.cashAccount || 0).toFixed(2), (r.totalBalance || 0).toFixed(2));
       
       // Status
       if (useGuardrails) row.push(r.guardrailStatus || 'normal');
@@ -2896,7 +2897,7 @@ const RetirementCalculator = () => {
   <div className="flex justify-between items-start mb-4">
     <div>
       <h1 className="text-3xl font-bold text-gray-800 mb-2">Australian Retirement Planning Tool</h1>
-      <p className="text-gray-600">Version 15.2 - Executive Summary Dashboard</p>
+      <p className="text-gray-600">Version 15.4 - Stochastic Irregular Expenses</p>
     </div>
     <div className="text-right">
       <label className="block text-sm font-medium text-gray-700 mb-2">Display Values</label>
@@ -3159,7 +3160,7 @@ const RetirementCalculator = () => {
               <div className="flex gap-2 justify-center">
                 <button 
                   onClick={() => {
-                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_2.pdf', '_blank');
+                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_4.pdf', '_blank');
                   }}
                   className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
                 >
@@ -3167,7 +3168,7 @@ const RetirementCalculator = () => {
                 </button>
                 <button 
                   onClick={() => {
-                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_2.docx', '_blank');
+                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_4.docx', '_blank');
                   }}
                   className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm font-medium"
                 >
@@ -3728,18 +3729,15 @@ const RetirementCalculator = () => {
                   </div>
                   <div className="text-2xl font-bold text-purple-700">
                     {enableCoupleTracking && pensionRecipientType === 'couple'
-                      ? ((((partner1.currentAge >= partner1.retirementAge ? partner1.pensionIncome : 0) + 
-                           (partner2.currentAge >= partner2.retirementAge ? partner2.pensionIncome : 0) + 
-                           (partner1.currentAge < partner1.retirementAge ? partner1.preRetirementIncome : 0) + 
-                           (partner2.currentAge < partner2.retirementAge ? partner2.preRetirementIncome : 0)) / baseSpending) * 100).toFixed(0)
+                      ? ((((partner1.pensionIncome) + 
+                           (partner2.pensionIncome)) / baseSpending) * 100).toFixed(0)
                       : ((totalPensionIncome / baseSpending) * 100).toFixed(0)}%
                   </div>
                   <div className="text-xs text-gray-600 mt-2">
                     {enableCoupleTracking && pensionRecipientType === 'couple' ? (
                       <>
                         of base spending<br/>
-                        covered by all income<br/>
-                        (pensions + pre-retirement)
+                        covered by pensions at retirement
                       </>
                     ) : (
                       <>
@@ -4101,7 +4099,7 @@ const RetirementCalculator = () => {
             )}
             {enableCoupleTracking && includeAgedCare && deathScenario === 'both-alive' && (
               <div className="mt-2 text-xs text-amber-700 bg-amber-50 p-2 rounded border border-amber-200">
-                ⚠️ <strong>Action Required:</strong> To see aged care costs, you must select a death scenario below. Aged care only applies to the surviving partner after the first partner dies.
+                ⚠️ <strong>Action Required:</strong> To see aged care costs, you must select a death scenario above. Aged care only applies to the surviving partner after the first partner dies.
               </div>
             )}
           </div>
@@ -6241,7 +6239,7 @@ const RetirementCalculator = () => {
         )}
 
        <div className="text-center text-sm text-gray-600 mt-6">
-         Australian Retirement Planning Tool v15.4 (Stochastic Irregular Expenses - No Aged Care Duplication) ·{' '}
+         Australian Retirement Planning Tool v15.4 ·{' '}
          <a
            href="mailto:aust-retirement-calculator@proton.me"
            className="underline"
