@@ -239,7 +239,8 @@ export async function POST(request: NextRequest) {
         }),
         new Paragraph({
           children: [new TextRun({ text: desc, size: 20, color: '64748B', italics: true })],
-          spacing: { left: 720, after: 240 },
+          spacing: { after: 240 },
+          indent: { left: 720 },
         })
       );
     });
@@ -1139,15 +1140,18 @@ export async function POST(request: NextRequest) {
             }),
             new Paragraph({
               text: `  • 10th percentile (worst 10%): ${formatCurrency(mcResults.percentiles.p10 || 0)}`,
-              spacing: { left: 200 },
+              spacing: { after: 0 },
+              indent: { left: 200 },
             }),
             new Paragraph({
               text: `  • Median (typical outcome): ${formatCurrency(mcResults.percentiles.p50 || 0)}`,
-              spacing: { left: 200 },
+              spacing: { after: 0 },
+              indent: { left: 200 },
             }),
             new Paragraph({
               text: `  • 90th percentile (best 10%): ${formatCurrency(mcResults.percentiles.p90 || 0)}`,
-              spacing: { left: 200, after: 200 },
+              spacing: { after: 200 },
+              indent: { left: 200 },
             })
           );
         }
@@ -1231,11 +1235,13 @@ export async function POST(request: NextRequest) {
               }),
               new Paragraph({
                 text: `  Final balance: ${formatCurrency(result.finalBalance)}`,
-                spacing: { left: 400 },
+                spacing: { after: 0 },
+                indent: { left: 400 },
               }),
               new Paragraph({
                 text: `  Portfolio lasted: ${result.yearsLasted} of ${result.targetYears} years`,
-                spacing: { left: 400, after: 100 },
+                spacing: { after: 100 },
+                indent: { left: 400 },
               })
             );
           }
