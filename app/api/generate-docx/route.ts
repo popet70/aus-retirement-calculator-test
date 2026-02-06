@@ -55,6 +55,18 @@ export async function POST(request: NextRequest) {
   try {
     const data = await request.json();
     
+    // Validate required data
+    if (!data) {
+      return NextResponse.json(
+        { error: 'No data provided', details: 'Request body is empty' },
+        { status: 400 }
+      );
+    }
+    
+    console.log('Received data keys:', Object.keys(data));
+    console.log('Has constantReturnChartData:', !!data.constantReturnChartData);
+    console.log('constantReturnChartData length:', data.constantReturnChartData?.length || 0);
+    
     // Calculate pension income - handle couple tracking
     let pensionIncome = 0;
     if (data.enableCoupleTracking && data.partner1 && data.partner2) {
@@ -76,6 +88,21 @@ export async function POST(request: NextRequest) {
     const chartData = data.chartData || [];
     const constantReturnChartData = data.constantReturnChartData || [];
     const oneOffExpenses = data.oneOffExpenses || [];
+    
+    // Log what we have
+    console.log('chartData length:', chartData.length);
+    console.log('constantReturnChartData length:', constantReturnChartData.length);
+    console.log('oneOffExpenses length:', oneOffExpenses.length);
+    console.log('Has Monte Carlo:', !!mcResults);
+    console.log('Has Formal Tests:', !!data.formalTestResults);
+    
+    // Validate we have at least some data to generate a report
+    if (constantReturnChartData.length === 0 && chartData.length === 0) {
+      return NextResponse.json(
+        { error: 'No projection data', details: 'Both constantReturnChartData and chartData are empty' },
+        { status: 400 }
+      );
+    }
     
     // Build document sections - can contain Paragraphs and Tables
     const sections: (Paragraph | Table)[] = [];
@@ -606,22 +633,27 @@ export async function POST(request: NextRequest) {
         }),
       ];
       
-      selectedYears.forEach((row: any) => {
-        const balance = row['Total Balance'] || row.totalBalance || 0;
-        const income = row['Income'] || row.income || 0;
-        const spending = row['Spending'] || row.spending || 0;
-        
-        projectionRows.push(
-          new TableRow({
-            children: [
-              createTableCell(String(row.year || ''), { alignment: AlignmentType.CENTER }),
-              createTableCell(String(row.age || ''), { alignment: AlignmentType.CENTER }),
-              createTableCell(typeof balance === 'number' ? formatCurrency(balance) : String(balance), { alignment: AlignmentType.RIGHT }),
-              createTableCell(typeof income === 'number' ? formatCurrency(income) : String(income), { alignment: AlignmentType.RIGHT }),
-              createTableCell(typeof spending === 'number' ? formatCurrency(spending) : String(spending), { alignment: AlignmentType.RIGHT }),
-            ],
-          })
-        );
+      selectedYears.forEach((row: any, index: number) => {
+        try {
+          const balance = row['Total Balance'] || row.totalBalance || 0;
+          const income = row['Income'] || row.income || 0;
+          const spending = row['Spending'] || row.spending || 0;
+          
+          projectionRows.push(
+            new TableRow({
+              children: [
+                createTableCell(String(row.year || index + 1), { alignment: AlignmentType.CENTER }),
+                createTableCell(String(row.age || ''), { alignment: AlignmentType.CENTER }),
+                createTableCell(typeof balance === 'number' ? formatCurrency(balance) : String(balance), { alignment: AlignmentType.RIGHT }),
+                createTableCell(typeof income === 'number' ? formatCurrency(income) : String(income), { alignment: AlignmentType.RIGHT }),
+                createTableCell(typeof spending === 'number' ? formatCurrency(spending) : String(spending), { alignment: AlignmentType.RIGHT }),
+              ],
+            })
+          );
+        } catch (rowError) {
+          console.error(`Error processing row ${index}:`, rowError, row);
+          // Skip this row and continue
+        }
       });
       
       sections.push(
@@ -1358,7 +1390,15 @@ export async function POST(request: NextRequest) {
     });
     
     // Generate buffer
-    const buffer = await Packer.toBuffer(doc);
+    console.log('About to generate buffer from document...');
+    let buffer;
+    try {
+      buffer = await Packer.toBuffer(doc);
+      console.log('Buffer generated successfully, size:', buffer.length);
+    } catch (packError) {
+      console.error('Error in Packer.toBuffer:', packError);
+      throw new Error(`Failed to pack document: ${packError instanceof Error ? packError.message : 'Unknown packing error'}`);
+    }
     
     // Convert Buffer to Uint8Array for Next.js compatibility
     const uint8Array = new Uint8Array(buffer);
