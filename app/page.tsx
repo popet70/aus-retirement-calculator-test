@@ -714,6 +714,7 @@ const RetirementCalculator = () => {
         retirementAge: state.partner1.retirementAge || 60,
         superBalance: state.partner1.superBalance || 0,
         pensionIncome: state.partner1.pensionIncome || 0,
+        reversionaryRate: state.partner1.reversionaryRate || 67,
         preRetirementIncome: state.partner1.preRetirementIncome || 0,
         deathAge: state.partner1.deathAge || 90,
         gender: state.partner1.gender || 'male'
@@ -726,6 +727,7 @@ const RetirementCalculator = () => {
         retirementAge: state.partner2.retirementAge || 60,
         superBalance: state.partner2.superBalance || 0,
         pensionIncome: state.partner2.pensionIncome || 0,
+        reversionaryRate: state.partner2.reversionaryRate || 67,
         preRetirementIncome: state.partner2.preRetirementIncome || 0,
         deathAge: state.partner2.deathAge || 90,
         gender: state.partner2.gender || 'female'
