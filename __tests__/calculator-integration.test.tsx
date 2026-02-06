@@ -288,7 +288,7 @@ describe('Retirement Calculator - Integration Tests', () => {
   
   // Now we have two export buttons
   expect(screen.getByText(/Export CSV/i)).toBeInTheDocument();
-  expect(screen.getByText(/Export PDF Report/i)).toBeInTheDocument();
+  expect(screen.getByText(/Export Word/i)).toBeInTheDocument();
 });
   });
 
