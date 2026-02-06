@@ -1,112 +1,82 @@
-/**
- * PDF Export Button Component
- * 
- * Generates PDFs client-side using jsPDF
- * Works on Vercel and other serverless platforms
- */
-
 'use client';
 
-import { useState } from 'react';
-import { generateClientSidePDF } from '@/lib/utils/generateClientPdf';
+import React from 'react';
 
-interface PdfExportButtonProps {
-  // All the data needed for the report
-  retirementData: {
-    mainSuperBalance: number;
-    sequencingBuffer: number;
-    totalPensionIncome: number;
-    currentAge: number;
-    retirementAge: number;
-    pensionRecipientType: 'single' | 'couple';
-    isHomeowner: boolean;
-    baseSpending: number;
-    spendingPattern: string;
-    splurgeAmount: number;
-    splurgeStartAge: number;
-    splurgeDuration: number;
-    inflationRate: number;
-    selectedScenario: number;
-    includeAgePension: boolean;
-    chartData: any[];
-    useGuardrails?: boolean;
-    guardrailParams?: any;
-    oneOffExpenses?: any[];
-    
-    // Monte Carlo results
-    monteCarloResults?: {
-      medianSimulation?: any[];
-      successRate?: number;
-      percentiles?: any;
-    };
-    
-    // Historical Monte Carlo results
-    historicalMonteCarloResults?: {
-      medianSimulation?: any[];
-      successRate?: number;
-      percentiles?: any;
-    };
-    
-    // Formal test results
-    formalTestResults?: {
-      [key: string]: {
-        name: string;
-        desc: string;
-        simulationData: any[];
-      };
-    };
+interface RetirementData {
+  mainSuperBalance: number;
+  sequencingBuffer: number;
+  totalPensionIncome: number;
+  currentAge: number;
+  retirementAge: number;
+  pensionRecipientType: 'single' | 'couple';
+  isHomeowner: boolean;
+  baseSpending: number;
+  spendingPattern: string;
+  splurgeAmount: number;
+  splurgeStartAge: number;
+  splurgeDuration: number;
+  inflationRate: number;
+  selectedScenario: number;
+  includeAgePension: boolean;
+  chartData: any[];
+  oneOffExpenses: any[];
+  monteCarloResults?: {
+    medianSimulation: any;
+    successRate: number;
+    percentiles: any;
   };
-  
-  // Optional custom button text
-  buttonText?: string;
-  
-  // Optional custom filename
-  filename?: string;
+  historicalMonteCarloResults?: {
+    medianSimulation: any;
+    successRate: number;
+    percentiles: any;
+  };
+  formalTestResults?: any;
 }
 
-export default function PdfExportButton({ 
-  retirementData, 
-  buttonText = '📄 Export PDF Report',
-  filename = `retirement-plan-${new Date().toISOString().split('T')[0]}.pdf`
-}: PdfExportButtonProps) {
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+interface DocxExportButtonProps {
+  retirementData: RetirementData;
+}
+
+const DocxExportButton: React.FC<DocxExportButtonProps> = ({ retirementData }) => {
   
-  const handleGeneratePdf = () => {
-    setIsGenerating(true);
-    setError(null);
-    
+  const generateDocx = async () => {
     try {
-      // Generate PDF client-side
-      generateClientSidePDF(retirementData, filename);
-      
-      // Small delay to show the generating state
-      setTimeout(() => {
-        setIsGenerating(false);
-      }, 500);
-      
-    } catch (err) {
-      console.error('Error generating PDF:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      setIsGenerating(false);
+      const response = await fetch('/api/generate-docx', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(retirementData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Document generation failed');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `retirement-plan-${new Date().toISOString().split('T')[0]}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error generating document:', error);
+      alert('Failed to generate document. Please try again.');
     }
   };
-  
+
   return (
-    <div>
-      <button
-        onClick={handleGeneratePdf}
-        disabled={isGenerating}
-        className="px-3 py-1 bg-red-600 text-white rounded text-sm font-medium hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed w-full"
-      >
-        {isGenerating ? '⏳ Generating...' : buttonText}
-      </button>
-      
-      {error && (
-        <div className="mt-2 text-xs text-red-600">
-          Error: {error}
-        </div>
-      )}
-    </div>
+    <button
+      onClick={generateDocx}
+      className="px-3 py-1 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700"
+      title="Export comprehensive retirement plan report as Word document"
+    >
+      📄 Export Word
+    </button>
   );
-}
+};
+
+export default DocxExportButton;

@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ComposedChart } from 'recharts';
-import PdfExportButton from '@/components/PdfExportButton';
+import DocxExportButton from '@/components/PdfExportButton';
 import { PartnerDetails, createDefaultPartner, calculateAgePensionForCouple, calculateReversionaryPension } from '@/lib/utils/coupleTracking';
 import { CoupleTrackingPanel } from '@/components/CoupleTrackingPanel';
 
@@ -2788,6 +2788,33 @@ const RetirementCalculator = () => {
       personAtHomeSpending, deathInCare, enableCoupleTracking, partner1, partner2, deathScenario, singleSpendingMultiplier,
       useStochasticExpenses]);
 
+  // ALWAYS generate constant return simulation for Portfolio Projections in reports
+  const constantReturnSimulation = useMemo(() => {
+    const returns = Array(35).fill(selectedScenario);
+    
+    let irregularExpensePath: IrregularExpenseYear[] | undefined;
+    if (useStochasticExpenses) {
+      const expenseEngine = new IrregularExpenseEngine(0);
+      const startAge = enableCoupleTracking && pensionRecipientType === 'couple' 
+        ? Math.min(partner1.retirementAge, partner2.retirementAge)
+        : retirementAge;
+      const currentYear = new Date().getFullYear();
+      const yearsUntilRetirement = enableCoupleTracking && pensionRecipientType === 'couple'
+        ? Math.min(partner1.retirementAge - partner1.currentAge, partner2.retirementAge - partner2.currentAge)
+        : retirementAge - currentAge;
+      const startYear = currentYear + yearsUntilRetirement;
+      irregularExpensePath = expenseEngine.generateExpensePath(startAge, startAge + 34, startYear);
+    }
+    
+    return runSimulation(returns, inflationRate, false, 35, irregularExpensePath);
+  }, [mainSuperBalance, sequencingBuffer, totalPensionIncome, baseSpending,
+      selectedScenario, isHomeowner, includeAgePension, spendingPattern, useGuardrails, upperGuardrail, lowerGuardrail, guardrailAdjustment,
+      splurgeAmount, splurgeStartAge, splurgeDuration, oneOffExpenses, includeOneOffExpenses,
+      currentAge, retirementAge, agePensionParams, pensionRecipientType,
+      includeAgedCare, agedCareApproach, agedCareRAD, agedCareAnnualCost, deterministicAgedCareAge, agedCareDuration,
+      personAtHomeSpending, deathInCare, enableCoupleTracking, partner1, partner2, deathScenario, singleSpendingMultiplier,
+      useStochasticExpenses, inflationRate]);
+
   const chartData = useMemo(() => {
     if (!simulationResults) return [];
     return simulationResults.map((r: any) => {
@@ -3360,7 +3387,7 @@ const RetirementCalculator = () => {
         </button>
         
         {/* Row 3 */}
-        <PdfExportButton
+        <DocxExportButton
           retirementData={{
             mainSuperBalance,
             sequencingBuffer,
@@ -3377,21 +3404,31 @@ const RetirementCalculator = () => {
             inflationRate,
             selectedScenario,
             includeAgePension,
-            chartData,  
+            chartData,
+            constantReturnChartData: constantReturnSimulation?.map((r: any) => ({
+              year: r.year,
+              age: r.age,
+              'Total Balance': r.totalBalance,
+              'Income': r.income,
+              'Spending': r.spending,
+            })) || [],
             oneOffExpenses,
-            monteCarloResults: useMonteCarlo && monteCarloResults ? {
+            enableCoupleTracking,
+            partner1: enableCoupleTracking ? partner1 : undefined,
+            partner2: enableCoupleTracking ? partner2 : undefined,
+            monteCarloResults: monteCarloResults ? {
               medianSimulation: monteCarloResults.medianSimulation,
               successRate: monteCarloResults.successRate,
               percentiles: monteCarloResults.percentiles,
             } : undefined,
 
-            historicalMonteCarloResults: useHistoricalMonteCarlo && historicalMonteCarloResults ? {
+            historicalMonteCarloResults: historicalMonteCarloResults ? {
               medianSimulation: historicalMonteCarloResults.medianSimulation,
               successRate: historicalMonteCarloResults.successRate,
               percentiles: historicalMonteCarloResults.percentiles,
             } : undefined,
 
-            formalTestResults: useFormalTest && formalTestResults ? formalTestResults : undefined,
+            formalTestResults: formalTestResults ? formalTestResults : undefined,
           }}
         />
       </div>
