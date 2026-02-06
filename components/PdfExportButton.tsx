@@ -54,7 +54,8 @@ const DocxExportButton: React.FC<DocxExportButtonProps> = ({ retirementData }) =
       });
 
       if (!response.ok) {
-        throw new Error('Document generation failed');
+        const errorData = await response.json();
+        throw new Error(errorData.details || errorData.error || 'Document generation failed');
       }
 
       const blob = await response.blob();
@@ -68,7 +69,8 @@ const DocxExportButton: React.FC<DocxExportButtonProps> = ({ retirementData }) =
       document.body.removeChild(a);
     } catch (error) {
       console.error('Error generating document:', error);
-      alert('Failed to generate document. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Failed to generate document: ${errorMessage}`);
     }
   };
 

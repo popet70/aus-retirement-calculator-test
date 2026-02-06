@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, ShadingType, HeadingLevel, convertInchesToTwip, LevelFormat, UnderlineType } from 'docx';
+import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, ShadingType, HeadingLevel, convertInchesToTwip } from 'docx';
 
 // Helper functions
 function formatCurrency(amount: number): string {
@@ -1373,8 +1373,16 @@ export async function POST(request: NextRequest) {
     
   } catch (error) {
     console.error('DOCX generation error:', error);
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    console.error('Error name:', error instanceof Error ? error.name : 'Unknown');
+    console.error('Error message:', error instanceof Error ? error.message : String(error));
+    
     return NextResponse.json(
-      { error: 'Failed to generate document', details: error instanceof Error ? error.message : 'Unknown error' },
+      { 
+        error: 'Failed to generate document', 
+        details: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      },
       { status: 500 }
     );
   }
