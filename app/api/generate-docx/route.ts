@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
           }),
         ],
         spacing: { before: 800 },
-        alignment: AlignmentType.JUSTIFY,
+        alignment: AlignmentType.BOTH,
         border: {
           top: { style: BorderStyle.SINGLE, size: 8, color: 'DC2626' },
           bottom: { style: BorderStyle.SINGLE, size: 8, color: 'DC2626' },
