@@ -304,6 +304,7 @@ const RetirementCalculator = () => {
   const [includeOneOffExpenses, setIncludeOneOffExpenses] = useState(true); // Toggle to enable/disable
   const [showOneOffExpenses, setShowOneOffExpenses] = useState(false);
   const [useStochasticExpenses, setUseStochasticExpenses] = useState(false); // New: toggle for stochastic vs manual
+  const [monteCarloStale, setMonteCarloStale] = useState(false); // Track if MC results need refresh
   const [showPensionSummary, setShowPensionSummary] = useState(true);
   const [showPensionDetails, setShowPensionDetails] = useState(false);
   const [showExecutiveSummary, setShowExecutiveSummary] = useState(false);
@@ -556,6 +557,375 @@ const RetirementCalculator = () => {
     return Object.keys(errors).length === 0;
   };
   
+  // ============================================================================
+  // SAVE/LOAD SCENARIO FUNCTIONALITY
+  // ============================================================================
+  
+  // State for scenario management
+  const [showScenarioManager, setShowScenarioManager] = useState(false);
+  const [scenarioName, setScenarioName] = useState('');
+  const [savedScenariosList, setSavedScenariosList] = useState<Array<{
+    name: string;
+    timestamp: string;
+    version: string;
+  }>>([]);
+  
+  
+  // Get current state as a saveable object
+  const getCurrentState = () => {
+    return {
+      version: '15.4',
+      timestamp: new Date().toISOString(),
+      state: {
+        // Basic settings
+        currentAge,
+        retirementAge,
+        mainSuperBalance,
+        sequencingBuffer,
+        totalPensionIncome,
+        baseSpending,
+        selectedScenario,
+        isHomeowner,
+        includeAgePension,
+        pensionRecipientType,
+        
+        // Spending
+        spendingPattern,
+        splurgeAmount,
+        splurgeStartAge,
+        splurgeDuration,
+        splurgeRampDownYears,
+        
+        // Market assumptions
+        inflationRate,
+        expectedReturn,
+        returnVolatility,
+        
+        // Test scenarios
+        useHistoricalData,
+        useMonteCarlo,
+        useHistoricalMonteCarlo,
+        useFormalTest,
+        historicalPeriod,
+        monteCarloRuns,
+        historicalMethod,
+        blockSize,
+        
+        // Guardrails
+        useGuardrails,
+        upperGuardrail,
+        lowerGuardrail,
+        guardrailAdjustment,
+        
+        // Expenses
+        oneOffExpenses,
+        includeOneOffExpenses,
+        useStochasticExpenses,
+        
+        // Couple tracking
+        enableCoupleTracking,
+        partner1,
+        partner2,
+        deathScenario,
+        singleSpendingMultiplier,
+        
+        // Aged care
+        includeAgedCare,
+        agedCareApproach,
+        agedCareRAD,
+        agedCareAnnualCost,
+        deterministicAgedCareAge,
+        agedCareDuration,
+        personAtHomeSpending,
+        deathInCare,
+        
+        // Debt
+        includeDebt,
+        debts,
+        
+        // Display preferences (optional - not critical to save)
+        showNominalDollars,
+        showPercentileBands,
+      }
+    };
+  };
+  
+  // Load state from a saved scenario
+  const loadState = (state: any) => {
+    // Basic settings
+    setCurrentAge(state.currentAge || 55);
+    setRetirementAge(state.retirementAge || 60);
+    setMainSuperBalance(state.mainSuperBalance || 1000000);
+    setSequencingBuffer(state.sequencingBuffer || 200000);
+    setTotalPensionIncome(state.totalPensionIncome || 0);
+    setBaseSpending(state.baseSpending || 80000);
+    setSelectedScenario(state.selectedScenario || 4);
+    setIsHomeowner(state.isHomeowner !== undefined ? state.isHomeowner : true);
+    setIncludeAgePension(state.includeAgePension !== undefined ? state.includeAgePension : true);
+    setPensionRecipientType(state.pensionRecipientType || 'single');
+    
+    // Spending
+    setSpendingPattern(state.spendingPattern || 'jpmorgan');
+    setSplurgeAmount(state.splurgeAmount || 0);
+    setSplurgeStartAge(state.splurgeStartAge || 65);
+    setSplurgeDuration(state.splurgeDuration || 5);
+    setSplurgeRampDownYears(state.splurgeRampDownYears || 0);
+    
+    // Market assumptions
+    setInflationRate(state.inflationRate || 2.5);
+    setExpectedReturn(state.expectedReturn || 7);
+    setReturnVolatility(state.returnVolatility || 18);
+    
+    // Test scenarios
+    setUseHistoricalData(state.useHistoricalData || false);
+    setUseMonteCarlo(state.useMonteCarlo || false);
+    setUseHistoricalMonteCarlo(state.useHistoricalMonteCarlo || false);
+    setUseFormalTest(state.useFormalTest || false);
+    setHistoricalPeriod(state.historicalPeriod || 'gfc2008');
+    setMonteCarloRuns(state.monteCarloRuns || 1000);
+    setHistoricalMethod(state.historicalMethod || 'overlapping');
+    setBlockSize(state.blockSize || 5);
+    
+    // Guardrails
+    setUseGuardrails(state.useGuardrails || false);
+    setUpperGuardrail(state.upperGuardrail || 20);
+    setLowerGuardrail(state.lowerGuardrail || 15);
+    setGuardrailAdjustment(state.guardrailAdjustment || 10);
+    
+    // Expenses
+    if (state.oneOffExpenses && Array.isArray(state.oneOffExpenses)) {
+      setOneOffExpenses(state.oneOffExpenses.map(expense => ({
+        description: expense.description || '',
+        age: expense.age || 65,
+        amount: expense.amount || 0
+      })));
+    } else {
+      setOneOffExpenses([]);
+    }
+    setIncludeOneOffExpenses(state.includeOneOffExpenses !== undefined ? state.includeOneOffExpenses : true);
+    setUseStochasticExpenses(state.useStochasticExpenses || false);
+    
+    // Couple tracking
+    setEnableCoupleTracking(state.enableCoupleTracking || false);
+    if (state.partner1) {
+      setPartner1({
+        name: state.partner1.name || 'Partner 1',
+        currentAge: state.partner1.currentAge || 55,
+        retirementAge: state.partner1.retirementAge || 60,
+        superBalance: state.partner1.superBalance || 0,
+        pensionIncome: state.partner1.pensionIncome || 0,
+        preRetirementIncome: state.partner1.preRetirementIncome || 0,
+        deathAge: state.partner1.deathAge || 90,
+        gender: state.partner1.gender || 'male'
+      });
+    }
+    if (state.partner2) {
+      setPartner2({
+        name: state.partner2.name || 'Partner 2',
+        currentAge: state.partner2.currentAge || 55,
+        retirementAge: state.partner2.retirementAge || 60,
+        superBalance: state.partner2.superBalance || 0,
+        pensionIncome: state.partner2.pensionIncome || 0,
+        preRetirementIncome: state.partner2.preRetirementIncome || 0,
+        deathAge: state.partner2.deathAge || 90,
+        gender: state.partner2.gender || 'female'
+      });
+    }
+    setDeathScenario(state.deathScenario || 'both-alive');
+    setSingleSpendingMultiplier(state.singleSpendingMultiplier || 0.65);
+    
+    // Aged care
+    setIncludeAgedCare(state.includeAgedCare || false);
+    setAgedCareApproach(state.agedCareApproach || 'probabilistic');
+    setAgedCareRAD(state.agedCareRAD || 400000);
+    setAgedCareAnnualCost(state.agedCareAnnualCost || 65000);
+    setDeterministicAgedCareAge(state.deterministicAgedCareAge || 85);
+    setAgedCareDuration(state.agedCareDuration || 3);
+    setPersonAtHomeSpending(state.personAtHomeSpending || 0.70);
+    setDeathInCare(state.deathInCare !== undefined ? state.deathInCare : true);
+    
+    // Debt
+    setIncludeDebt(state.includeDebt || false);
+    if (state.debts && Array.isArray(state.debts)) {
+      setDebts(state.debts.map(debt => ({
+        name: debt.name || 'Debt',
+        amount: debt.amount || 0,
+        interestRate: debt.interestRate || 0,
+        repaymentYears: debt.repaymentYears || 1,
+        extraPayment: debt.extraPayment || 0
+      })));
+    } else {
+      setDebts([]);
+    }
+    
+    // Display preferences
+    if (state.showNominalDollars !== undefined) setShowNominalDollars(state.showNominalDollars);
+    if (state.showPercentileBands !== undefined) setShowPercentileBands(state.showPercentileBands);
+  };
+  
+  // Save scenario to localStorage
+  const saveScenario = (name: string) => {
+    try {
+      const scenario = getCurrentState();
+      const scenarios = JSON.parse(localStorage.getItem('retirementScenarios') || '[]');
+      
+      // Check if name already exists
+      const existingIndex = scenarios.findIndex((s: any) => s.name === name);
+      
+      if (existingIndex >= 0) {
+        // Update existing
+        scenarios[existingIndex] = { name, ...scenario };
+      } else {
+        // Add new
+        scenarios.push({ name, ...scenario });
+      }
+      
+      localStorage.setItem('retirementScenarios', JSON.stringify(scenarios));
+      loadSavedScenariosList();
+      setScenarioName('');
+      return true;
+    } catch (error) {
+      console.error('Failed to save scenario:', error);
+      alert('Failed to save scenario. Storage might be full.');
+      return false;
+    }
+  };
+  
+  // Load scenario from localStorage
+  const loadScenario = (name: string) => {
+    try {
+      const scenarios = JSON.parse(localStorage.getItem('retirementScenarios') || '[]');
+      const scenario = scenarios.find((s: any) => s.name === name);
+      
+      if (scenario && scenario.state) {
+        loadState(scenario.state);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Failed to load scenario:', error);
+      alert('Failed to load scenario.');
+      return false;
+    }
+  };
+  
+  // Delete scenario from localStorage
+  const deleteScenario = (name: string) => {
+    if (!confirm(`Delete scenario "${name}"? This cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      const scenarios = JSON.parse(localStorage.getItem('retirementScenarios') || '[]');
+      const filtered = scenarios.filter((s: any) => s.name !== name);
+      localStorage.setItem('retirementScenarios', JSON.stringify(filtered));
+      loadSavedScenariosList();
+    } catch (error) {
+      console.error('Failed to delete scenario:', error);
+      alert('Failed to delete scenario.');
+    }
+  };
+  
+  // Load list of saved scenarios
+  const loadSavedScenariosList = () => {
+    try {
+      const scenarios = JSON.parse(localStorage.getItem('retirementScenarios') || '[]');
+      setSavedScenariosList(scenarios.map((s: any) => ({
+        name: s.name,
+        timestamp: s.timestamp,
+        version: s.version
+      })));
+    } catch (error) {
+      console.error('Failed to load scenarios list:', error);
+      setSavedScenariosList([]);
+    }
+  };
+  
+  // Export scenario as JSON file
+  const exportScenario = () => {
+    const scenario = getCurrentState();
+    const scenarioWithName = {
+      name: scenarioName || 'Exported Scenario',
+      ...scenario
+    };
+    
+    const dataStr = JSON.stringify(scenarioWithName, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${scenarioName || 'scenario'}_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  
+  // Import scenario from JSON file
+  const importScenario = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const scenario = JSON.parse(content);
+        
+        if (scenario.state) {
+          loadState(scenario.state);
+          if (scenario.name) {
+            alert(`Loaded scenario: ${scenario.name}`);
+          }
+        } else {
+          alert('Invalid scenario file format.');
+        }
+      } catch (error) {
+        console.error('Failed to import scenario:', error);
+        alert('Failed to import scenario. Invalid file format.');
+      }
+    };
+    reader.readAsText(file);
+  };
+  
+  // Auto-save draft (runs every 30 seconds if there are changes)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const currentState = getCurrentState();
+      localStorage.setItem('retirementCalculatorDraft', JSON.stringify(currentState));
+    }, 30000); // Every 30 seconds
+    
+    return () => clearInterval(timer);
+  }, [currentAge, retirementAge, mainSuperBalance, baseSpending]); // Add more deps as needed
+  
+  // Load draft on mount
+  useEffect(() => {
+    loadSavedScenariosList();
+    
+    // Try to load auto-saved draft
+    const draft = localStorage.getItem('retirementCalculatorDraft');
+    if (draft) {
+      try {
+        const parsed = JSON.parse(draft);
+        if (parsed.state && parsed.timestamp) {
+          const draftAge = new Date().getTime() - new Date(parsed.timestamp).getTime();
+          const hoursSinceDraft = draftAge / (1000 * 60 * 60);
+          
+          // If draft is less than 24 hours old, offer to restore it
+          if (hoursSinceDraft < 24) {
+            if (confirm(`Found auto-saved work from ${new Date(parsed.timestamp).toLocaleString()}. Restore it?`)) {
+              loadState(parsed.state);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load draft:', error);
+      }
+    }
+  }, []);
+  
+  // ============================================================================
+  // END SAVE/LOAD SCENARIO FUNCTIONALITY
+  // ============================================================================
+  
   // Run validation whenever key inputs change
   useEffect(() => {
     validateInputs();
@@ -684,6 +1054,18 @@ const RetirementCalculator = () => {
       setAgedCareApproach('deterministic');
     }
   }, [useMonteCarlo, useHistoricalMonteCarlo, includeAgedCare, agedCareApproach]);
+  
+  // Mark Monte Carlo results as stale when key inputs change
+  useEffect(() => {
+    if (monteCarloResults || historicalMonteCarloResults) {
+      setMonteCarloStale(true);
+    }
+  }, [mainSuperBalance, sequencingBuffer, totalPensionIncome, baseSpending, currentAge, retirementAge,
+      expectedReturn, returnVolatility, spendingPattern, splurgeAmount, splurgeStartAge, splurgeDuration,
+      oneOffExpenses, includeOneOffExpenses, useStochasticExpenses, includeAgedCare, agedCareRAD,
+      agedCareAnnualCost, agedCareDuration, agedCareApproach, deterministicAgedCareAge,
+      enableCoupleTracking, partner1, partner2, deathScenario, singleSpendingMultiplier,
+      includeDebt, debts, useGuardrails, upperGuardrail, lowerGuardrail, guardrailAdjustment]);
 
  // Clear Monte Carlo results when key parameters change to force re-run
   // This ensures charts update when you change settings
@@ -2367,18 +2749,42 @@ const RetirementCalculator = () => {
     }
     
     let returns;
+    let irregularExpensePath: IrregularExpenseYear[] | undefined;
+    
     if (useHistoricalData) {
       returns = historicalReturns[historicalPeriod as keyof typeof historicalReturns];
     } else {
       returns = Array(35).fill(selectedScenario);
     }
-    return runSimulation(returns, inflationRate, false, 35);
+    
+    // Generate stochastic irregular expense path for constant/historical single runs
+    if (useStochasticExpenses) {
+      const expenseEngine = new IrregularExpenseEngine(0); // Use seed 0 for deterministic single run
+      const startAge = enableCoupleTracking && pensionRecipientType === 'couple' 
+        ? Math.min(partner1.retirementAge, partner2.retirementAge)
+        : retirementAge;
+      
+      // Calculate the calendar year for retirement (Year 1 of simulation)
+      const currentYear = new Date().getFullYear();
+      const yearsUntilRetirement = enableCoupleTracking && pensionRecipientType === 'couple'
+        ? Math.min(partner1.retirementAge - partner1.currentAge, partner2.retirementAge - partner2.currentAge)
+        : retirementAge - currentAge;
+      const startYear = currentYear + yearsUntilRetirement;
+      
+      irregularExpensePath = expenseEngine.generateExpensePath(startAge, startAge + 34, startYear);
+    } else {
+      irregularExpensePath = undefined; // Explicitly set to undefined when not using stochastic
+    }
+    
+    return runSimulation(returns, inflationRate, false, 35, irregularExpensePath);
   }, [mainSuperBalance, sequencingBuffer, totalPensionIncome, baseSpending,
       selectedScenario, isHomeowner, includeAgePension, spendingPattern, useGuardrails, upperGuardrail, lowerGuardrail, guardrailAdjustment,
-      useHistoricalData, historicalPeriod, useMonteCarlo, monteCarloResults, splurgeAmount, splurgeStartAge, splurgeDuration, oneOffExpenses, includeOneOffExpenses,
+      useHistoricalData, historicalPeriod, useMonteCarlo, monteCarloResults, useHistoricalMonteCarlo, historicalMonteCarloResults,
+      splurgeAmount, splurgeStartAge, splurgeDuration, oneOffExpenses, includeOneOffExpenses,
       currentAge, retirementAge, agePensionParams, pensionRecipientType, selectedFormalTest, formalTestResults,
       includeAgedCare, agedCareApproach, agedCareRAD, agedCareAnnualCost, deterministicAgedCareAge, agedCareDuration,
-      personAtHomeSpending, deathInCare, enableCoupleTracking, partner1, partner2, deathScenario, singleSpendingMultiplier]);
+      personAtHomeSpending, deathInCare, enableCoupleTracking, partner1, partner2, deathScenario, singleSpendingMultiplier,
+      useStochasticExpenses]);
 
   const chartData = useMemo(() => {
     if (!simulationResults) return [];
@@ -2919,9 +3325,16 @@ const RetirementCalculator = () => {
         {showNominalDollars ? 'Future dollar amounts' : 'Retirement year purchasing power'}
       </p>
       
-      {/* 2x2 Button Grid */}
+      {/* 2x3 Button Grid */}
       <div className="grid grid-cols-2 gap-2">
         {/* Row 1 */}
+        <button 
+          onClick={() => setShowScenarioManager(!showScenarioManager)}
+          className="px-3 py-1 bg-purple-600 text-white rounded text-sm font-medium hover:bg-purple-700"
+        >
+          {showScenarioManager ? '💾 Hide Scenarios' : '💾 Save/Load'}
+        </button>
+        
         <button 
           onClick={() => setShowHelpPanel(!showHelpPanel)}
           className="px-3 py-1 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700"
@@ -2929,6 +3342,7 @@ const RetirementCalculator = () => {
           {showHelpPanel ? '📖 Hide Help' : '📖 Quick Help'}
         </button>
         
+        {/* Row 2 */}
         <button
           onClick={() => setShowAssumptions(!showAssumptions)}
           className="px-3 py-1 bg-gray-200 text-gray-800 rounded text-sm font-medium hover:bg-gray-300"
@@ -2936,7 +3350,6 @@ const RetirementCalculator = () => {
           📑 Key Assumptions
         </button>
 
-        {/* Row 2 */}
         <button 
           onClick={exportDetailedCSV}
           className="px-3 py-1 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700"
@@ -2944,6 +3357,7 @@ const RetirementCalculator = () => {
           📊 Export CSV
         </button>
         
+        {/* Row 3 */}
         <PdfExportButton
           retirementData={{
             mainSuperBalance,
@@ -3177,6 +3591,136 @@ const RetirementCalculator = () => {
               </div>
               <p className="text-xs text-gray-500 mt-2">
                 Comprehensive guide with examples, calculations, and detailed explanations
+              </p>
+            </div>
+          </div>
+        )}
+        
+        {/* Scenario Manager Panel */}
+        {showScenarioManager && (
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-6 mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-purple-900">💾 Scenario Manager</h2>
+              <button 
+                onClick={() => setShowScenarioManager(false)}
+                className="text-gray-500 hover:text-gray-700 text-xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            
+            {/* Save Current Scenario */}
+            <div className="bg-white rounded-lg p-4 mb-4">
+              <h3 className="font-semibold text-purple-900 mb-3">Save Current Scenario</h3>
+              <div className="flex gap-2 mb-2">
+                <input 
+                  type="text"
+                  value={scenarioName}
+                  onChange={(e) => setScenarioName(e.target.value)}
+                  placeholder="Enter scenario name..."
+                  className="flex-1 px-3 py-2 border rounded"
+                />
+                <button 
+                  onClick={() => {
+                    if (scenarioName.trim()) {
+                      if (saveScenario(scenarioName.trim())) {
+                        alert(`Scenario "${scenarioName}" saved successfully!`);
+                      }
+                    } else {
+                      alert('Please enter a scenario name.');
+                    }
+                  }}
+                  className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 font-medium"
+                >
+                  💾 Save
+                </button>
+              </div>
+              <p className="text-xs text-gray-600">
+                Saves all current settings to browser storage. You can have multiple saved scenarios.
+              </p>
+            </div>
+            
+            {/* Export/Import */}
+            <div className="bg-white rounded-lg p-4 mb-4">
+              <h3 className="font-semibold text-purple-900 mb-3">Export / Import</h3>
+              <div className="flex gap-2">
+                <button 
+                  onClick={exportScenario}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium"
+                >
+                  📤 Export JSON
+                </button>
+                <label className="flex-1">
+                  <input 
+                    type="file"
+                    accept=".json"
+                    onChange={importScenario}
+                    className="hidden"
+                  />
+                  <div className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-medium text-center cursor-pointer">
+                    📥 Import JSON
+                  </div>
+                </label>
+              </div>
+              <p className="text-xs text-gray-600 mt-2">
+                Export scenarios as JSON files to share or backup. Import previously exported scenarios.
+              </p>
+            </div>
+            
+            {/* Saved Scenarios List */}
+            <div className="bg-white rounded-lg p-4">
+              <h3 className="font-semibold text-purple-900 mb-3">
+                Saved Scenarios ({savedScenariosList.length})
+              </h3>
+              
+              {savedScenariosList.length === 0 ? (
+                <p className="text-gray-500 text-sm italic">
+                  No saved scenarios yet. Save your current settings above to create your first scenario.
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {savedScenariosList.map((scenario) => (
+                    <div 
+                      key={scenario.name}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded hover:bg-gray-100"
+                    >
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">{scenario.name}</div>
+                        <div className="text-xs text-gray-500">
+                          Saved: {new Date(scenario.timestamp).toLocaleString()}
+                          {scenario.version && ` • v${scenario.version}`}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => {
+                            if (loadScenario(scenario.name)) {
+                              alert(`Loaded scenario: ${scenario.name}`);
+                              setShowScenarioManager(false);
+                            }
+                          }}
+                          className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+                        >
+                          Load
+                        </button>
+                        <button 
+                          onClick={() => deleteScenario(scenario.name)}
+                          className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+              <p className="text-xs text-yellow-800">
+                <strong>💡 Tip:</strong> Your work is auto-saved every 30 seconds to a draft. 
+                Saved scenarios persist in your browser even after closing. 
+                Export to JSON for permanent backup or sharing.
               </p>
             </div>
           </div>
@@ -3936,7 +4480,13 @@ const RetirementCalculator = () => {
               <input 
                 type="checkbox"
                 checked={useStochasticExpenses}
-                onChange={(e) => setUseStochasticExpenses(e.target.checked)}
+                onChange={(e) => {
+                  setUseStochasticExpenses(e.target.checked);
+                  // Automatically disable manual expenses when enabling stochastic
+                  if (e.target.checked) {
+                    setIncludeOneOffExpenses(false);
+                  }
+                }}
                 className="mr-2 mt-1"
               />
               <div>
@@ -3961,19 +4511,19 @@ const RetirementCalculator = () => {
             </label>
           </div>
           
-          {!useStochasticExpenses && (
-            <>
+          {/* Manual One-Off Expenses - Always visible */}
           <div className="flex justify-between items-center mb-3">
             <div className="flex items-center gap-3">
               <h3 className="text-lg font-bold">
                 Manual One-Off Expenses
                 <InfoTooltip text="Single large expenses in specific years. Enter amounts in future dollars (the year they occur), not today's dollars." />
               </h3>
-              <label className="flex items-center cursor-pointer">
+              <label className={`flex items-center cursor-pointer ${useStochasticExpenses ? 'opacity-50' : ''}`}>
                 <input
                   type="checkbox"
                   checked={includeOneOffExpenses}
                   onChange={(e) => setIncludeOneOffExpenses(e.target.checked)}
+                  disabled={useStochasticExpenses}
                   className="mr-2"
                 />
                 <span className="text-sm font-medium text-gray-700">Include in calculations</span>
@@ -3987,8 +4537,28 @@ const RetirementCalculator = () => {
             </button>
           </div>
           
+          {useStochasticExpenses && (
+            <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
+              <p className="text-sm text-yellow-800">
+                ⚠️ <strong>Note:</strong> Manual one-off expenses are disabled when using stochastic irregular expenses. 
+                Uncheck "Use Stochastic Irregular Expenses" above to use manual entries instead.
+              </p>
+            </div>
+          )}
+          
+          {!useStochasticExpenses && includeOneOffExpenses && (useMonteCarlo || useHistoricalMonteCarlo) && (
+            <div className="mb-3 p-3 bg-orange-50 border border-orange-200 rounded">
+              <p className="text-sm text-orange-800">
+                ⚠️ <strong>Monte Carlo Limitation:</strong> Manual one-off expenses use the same fixed amounts in every simulation. 
+                For more realistic Monte Carlo results, consider using <strong>Stochastic Irregular Expenses</strong> above, 
+                which models timing uncertainty and cost variation across simulations.
+              </p>
+            </div>
+          )}
+          
           {showOneOffExpenses && (
-            <div className="space-y-4">
+            <div className={useStochasticExpenses ? 'opacity-50 pointer-events-none' : ''}>
+              <div className="space-y-4">
               {[...oneOffExpenses].sort((a, b) => a.age - b.age).map((expense, sortedIndex) => {
                 const actualIndex = oneOffExpenses.findIndex(e => e === expense);
                 return (
@@ -4071,9 +4641,8 @@ const RetirementCalculator = () => {
                   </div>
                 </div>
               )}
+              </div>
             </div>
-          )}
-          </>
           )}
         </div>
 
@@ -4530,10 +5099,21 @@ const RetirementCalculator = () => {
                 </label>
                 <input type="number" value={returnVolatility} onChange={(e) => setReturnVolatility(Number(e.target.value))} className="w-full p-2 border rounded" step="1" />
               </div>
-              <button onClick={() => setMonteCarloResults(runMonteCarlo())} className="w-full px-4 py-3 bg-green-600 text-white rounded hover:bg-green-700 font-bold">
-                Run Monte Carlo
+              <button 
+                onClick={() => {
+                  setMonteCarloResults(runMonteCarlo());
+                  setMonteCarloStale(false);
+                }} 
+                className={`w-full px-4 py-3 ${monteCarloStale && monteCarloResults ? 'bg-orange-600 animate-pulse' : 'bg-green-600'} text-white rounded hover:bg-green-700 font-bold`}
+              >
+                {monteCarloStale && monteCarloResults ? '🔄 Re-Run Monte Carlo (Settings Changed)' : 'Run Monte Carlo'}
                 <InfoTooltip text="Runs 1000 scenarios with randomized returns to show range of possible outcomes." />
               </button>
+              {monteCarloStale && monteCarloResults && (
+                <div className="text-sm text-orange-600 font-semibold mt-2">
+                  ⚠️ Settings have changed. Click above to update results.
+                </div>
+              )}
             </div>
           )}
           
@@ -4608,11 +5188,19 @@ const RetirementCalculator = () => {
               )}
               
               <button 
-                onClick={() => setHistoricalMonteCarloResults(runHistoricalMonteCarlo())} 
-                className="w-full px-4 py-3 bg-teal-600 text-white rounded hover:bg-teal-700 font-bold"
+                onClick={() => {
+                  setHistoricalMonteCarloResults(runHistoricalMonteCarlo());
+                  setMonteCarloStale(false);
+                }} 
+                className={`w-full px-4 py-3 ${monteCarloStale && historicalMonteCarloResults ? 'bg-orange-600 animate-pulse' : 'bg-teal-600'} text-white rounded hover:bg-teal-700 font-bold`}
               >
-                Run Historical Monte Carlo ({monteCarloRuns} simulations)
+                {monteCarloStale && historicalMonteCarloResults ? '🔄 Re-Run Historical Monte Carlo (Settings Changed)' : `Run Historical Monte Carlo (${monteCarloRuns} simulations)`}
               </button>
+              {monteCarloStale && historicalMonteCarloResults && (
+                <div className="text-sm text-orange-600 font-semibold mt-2">
+                  ⚠️ Settings have changed. Click above to update results.
+                </div>
+              )}
             </div>
           )}
           
@@ -5965,6 +6553,53 @@ const RetirementCalculator = () => {
                 <div className="text-sm">
                   <span className="font-semibold text-purple-800">🧪 Formal Test View:</span>
                   <span className="text-gray-700"> Charts below show {selectedFormalTest ? (formalTestResults[selectedFormalTest as keyof typeof formalTestResults] as any).name : 'the base scenario'}. Click different tests in the table above to compare scenarios.</span>
+                </div>
+              </div>
+            )}
+            
+            {/* Early Portfolio Depletion Warning */}
+            {simulationResults && simulationResults.length > 0 && simulationResults.length < 5 && (
+              <div className="bg-red-50 border-l-4 border-red-600 p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <span className="text-3xl">💥</span>
+                  <div className="flex-1">
+                    <h3 className="font-bold text-red-900 mb-2">Portfolio Depleted in Year {simulationResults.length}!</h3>
+                    <p className="text-red-800 mb-3">
+                      The simulation ended early because the portfolio balance reached zero in year {simulationResults.length}. 
+                      This means your spending exceeds your resources under the current settings.
+                    </p>
+                    <div className="bg-white border border-red-200 rounded p-3 mb-3">
+                      <p className="font-semibold text-red-900 mb-2">Possible causes:</p>
+                      <ul className="list-disc list-inside text-red-800 space-y-1 text-sm">
+                        <li><strong>Returns too low:</strong> Expected return of {selectedScenario}% may be insufficient</li>
+                        <li><strong>Spending too high:</strong> Annual spending of {formatCurrency(baseSpending)} exceeds sustainable withdrawal rate</li>
+                        <li><strong>Large irregular expense:</strong> Stochastic expenses may have generated a very large cost in year 1</li>
+                        <li><strong>Insufficient capital:</strong> Starting balance of {formatCurrency(mainSuperBalance + sequencingBuffer)} too low</li>
+                        {enableCoupleTracking && pensionRecipientType === 'couple' && (
+                          <>
+                            <li><strong>Staggered retirement gap:</strong> If partners retire at different times, the household may lack accessible super during the gap period. Partner who retires later cannot access their super until they actually retire.</li>
+                            <li><strong>Missing pre-retirement income:</strong> Partners who haven't retired yet need pre-retirement income (salary) to cover expenses until their super becomes accessible.</li>
+                          </>
+                        )}
+                      </ul>
+                    </div>
+                    <div className="bg-yellow-50 border border-yellow-300 rounded p-3">
+                      <p className="font-semibold text-yellow-900 mb-2">💡 Suggested fixes:</p>
+                      <ul className="list-disc list-inside text-yellow-800 space-y-1 text-sm">
+                        <li>Increase expected return (try 6-7% for balanced portfolio)</li>
+                        <li>Reduce annual spending</li>
+                        <li>Increase sequencing buffer to cover gap period</li>
+                        {enableCoupleTracking && pensionRecipientType === 'couple' && (
+                          <>
+                            <li><strong>Add pre-retirement income</strong> for the partner who hasn't retired yet (their salary until they retire)</li>
+                            <li>Align retirement ages so both partners retire at the same time (eliminates gap)</li>
+                          </>
+                        )}
+                        <li>If using stochastic expenses: try toggling off to see if large expense caused failure</li>
+                        <li>Run Monte Carlo to see success rate across different scenarios</li>
+                      </ul>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
