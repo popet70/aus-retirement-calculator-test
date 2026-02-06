@@ -694,7 +694,7 @@ const RetirementCalculator = () => {
     
     // Expenses
     if (state.oneOffExpenses && Array.isArray(state.oneOffExpenses)) {
-      setOneOffExpenses(state.oneOffExpenses.map(expense => ({
+      setOneOffExpenses(state.oneOffExpenses.map((expense: any) => ({
         description: expense.description || '',
         age: expense.age || 65,
         amount: expense.amount || 0
@@ -747,7 +747,7 @@ const RetirementCalculator = () => {
     // Debt
     setIncludeDebt(state.includeDebt || false);
     if (state.debts && Array.isArray(state.debts)) {
-      setDebts(state.debts.map(debt => ({
+      setDebts(state.debts.map((debt: any) => ({
         name: debt.name || 'Debt',
         amount: debt.amount || 0,
         interestRate: debt.interestRate || 0,
