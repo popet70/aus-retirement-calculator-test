@@ -77,8 +77,8 @@ export async function POST(request: NextRequest) {
     const constantReturnChartData = data.constantReturnChartData || [];
     const oneOffExpenses = data.oneOffExpenses || [];
     
-    // Build document sections
-    const sections: Paragraph[] = [];
+    // Build document sections - can contain Paragraphs and Tables
+    const sections: (Paragraph | Table)[] = [];
     
     // ========== COVER PAGE ==========
     sections.push(
