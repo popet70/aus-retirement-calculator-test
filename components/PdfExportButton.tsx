@@ -19,7 +19,11 @@ interface RetirementData {
   selectedScenario: number;
   includeAgePension: boolean;
   chartData: any[];
+  constantReturnChartData?: any[];
   oneOffExpenses: any[];
+  enableCoupleTracking?: boolean;
+  partner1?: any;
+  partner2?: any;
   monteCarloResults?: {
     medianSimulation: any;
     successRate: number;
