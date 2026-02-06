@@ -1360,8 +1360,11 @@ export async function POST(request: NextRequest) {
     // Generate buffer
     const buffer = await Packer.toBuffer(doc);
     
+    // Convert Buffer to Uint8Array for Next.js compatibility
+    const uint8Array = new Uint8Array(buffer);
+    
     // Return document
-    return new NextResponse(buffer, {
+    return new NextResponse(uint8Array, {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'Content-Disposition': `attachment; filename="retirement-plan-${new Date().toISOString().split('T')[0]}.docx"`,
