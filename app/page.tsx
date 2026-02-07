@@ -393,7 +393,7 @@ const RetirementCalculator = () => {
   // Partner Mortality Modeling
   const [includePartnerMortality, setIncludePartnerMortality] = useState(false);
   const [partnerGender, setPartnerGender] = useState<'male' | 'female'>('female');
-  const [pensionReversionary, setPensionReversionary] = useState(0.67); // PSS/CSS reversionary percentage
+  const [pensionReversionary, setPensionReversionary] = useState(0.67); // Typical reversionary percentage for defined benefit pensions
 
   // Debt Repayment at Retirement
   const [includeDebt, setIncludeDebt] = useState(false);
@@ -574,7 +574,7 @@ const RetirementCalculator = () => {
   // Get current state as a saveable object
   const getCurrentState = () => {
     return {
-      version: '15.4',
+      version: '15.5',
       timestamp: new Date().toISOString(),
       state: {
         // Basic settings
@@ -2946,7 +2946,7 @@ const RetirementCalculator = () => {
         partner1Age,
         partner2Age,
         'Age Pension': toDisplayValue(r.agePension, r.year, r.cpiRate),
-        'PSS/CSS Pension': toDisplayValue(r.pensionIncome, r.year, r.cpiRate),
+        'Defined Benefit/Annuity': toDisplayValue(r.pensionIncome, r.year, r.cpiRate),
         'Total Income': toDisplayValue(r.income, r.year, r.cpiRate)
       };
     });
@@ -3008,9 +3008,9 @@ const RetirementCalculator = () => {
       if (partner2.pensionIncome > 0) headers.push(`${partner2.name} Pension`);
       if (partner1.preRetirementIncome > 0) headers.push(`${partner1.name} Pre-Retirement Income`);
       if (partner2.preRetirementIncome > 0) headers.push(`${partner2.name} Pre-Retirement Income`);
-      headers.push('PSS/CSS Pension Total');
+      headers.push('Defined Benefit/Annuity Total');
     } else {
-      if (totalPensionIncome > 0) headers.push('PSS/CSS Pension');
+      if (totalPensionIncome > 0) headers.push('Defined Benefit/Annuity');
     }
     if (includeAgePension) headers.push('Age Pension');
     headers.push('Total Income', 'Net Spending Need');
@@ -3183,7 +3183,7 @@ const RetirementCalculator = () => {
           row.push(partner2PreRetirement.toFixed(2));
         }
         
-        // Total PSS/CSS pension
+        // Total defined benefit/annuity pension
         row.push((r.pensionIncome || 0).toFixed(2));
       } else {
         if (totalPensionIncome > 0) row.push((r.pensionIncome || 0).toFixed(2));
@@ -3332,7 +3332,7 @@ const RetirementCalculator = () => {
   <div className="flex justify-between items-start mb-4">
     <div>
       <h1 className="text-3xl font-bold text-gray-800 mb-2">Australian Retirement Planning Tool</h1>
-      <p className="text-gray-600">Version 15.4 - Stochastic Irregular Expenses</p>
+      <p className="text-gray-600">Version 15.5 - Word Document Export</p>
     </div>
     <div className="text-right">
       <label className="block text-sm font-medium text-gray-700 mb-2">Display Values</label>
@@ -3556,7 +3556,7 @@ const RetirementCalculator = () => {
                 <ul className="text-sm space-y-1 text-gray-700">
                   <li><strong>Main Super:</strong> Your growth assets earning variable returns</li>
                   <li><strong>Sequencing Buffer:</strong> 3-5 years defensive cash (optional, earns 3% real)</li>
-                  <li><strong>PSS/CSS Pension:</strong> Defined benefit pension income (indexed to CPI)</li>
+                  <li><strong>Defined Benefit/Annuity:</strong> Defined benefit pension or superannuation annuity income (indexed to CPI)</li>
                   <li><strong>Age Pension:</strong> Government payment (asset/income tested)</li>
                   <li><strong>Couple Tracking:</strong> Model each partner separately with individual ages, super, pensions, and death scenarios</li>
                 </ul>
@@ -3613,7 +3613,7 @@ const RetirementCalculator = () => {
               <div className="flex gap-2 justify-center">
                 <button 
                   onClick={() => {
-                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_4.pdf', '_blank');
+                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_5.pdf', '_blank');
                   }}
                   className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
                 >
@@ -3621,7 +3621,7 @@ const RetirementCalculator = () => {
                 </button>
                 <button 
                   onClick={() => {
-                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_4.docx', '_blank');
+                    window.open('https://github.com/popet70/aus-retirement-calculator-test/raw/main/docs/Retirement_Calculator_User_Guide_v15_5.docx', '_blank');
                   }}
                   className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm font-medium"
                 >
@@ -3773,7 +3773,7 @@ const RetirementCalculator = () => {
             <h3 className="font-semibold text-blue-900 mb-3">Household Parameters</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1">Base Annual Spending</label>
+                <label className="block text-sm font-medium mb-1">Base Annual Spending in Retirement</label>
                 <input 
                   type="number" 
                   value={baseSpending} 
@@ -3869,8 +3869,8 @@ const RetirementCalculator = () => {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">
-                Pension Income (per year)
-                <InfoTooltip text="Your annual PSS/CSS/defined benefit pension income starting from retirement. Automatically indexed to inflation each year." />
+                Defined Benefit/Superannuation Annuity (net annual)
+                <InfoTooltip text="Your annual defined benefit pension or superannuation annuity income (after tax) starting from retirement. Includes PSS, CSS, DFRDB, or commercial lifetime annuities. Automatically indexed to inflation each year." />
               </label>
               <input 
                 type="number" 
@@ -3887,8 +3887,8 @@ const RetirementCalculator = () => {
           <div className="grid grid-cols-2 gap-4 mt-4">
             <div>
               <label className="block text-sm font-medium mb-1">
-                Current Age
-                <InfoTooltip text="Your age today. Used to calculate when you'll reach retirement age." />
+                Age turning this year
+                <InfoTooltip text="The age you will turn (or have turned) this calendar year. Used to calculate when you'll reach retirement age." />
               </label>
               <select 
                 value={currentAge} 
@@ -4074,7 +4074,7 @@ const RetirementCalculator = () => {
                 <div>
                   <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
                     💼 Private Pension Income
-                    <InfoTooltip text="PSS/CSS or other defined benefit pensions. Set to $0 if you don't have one." />
+                    <InfoTooltip text="Defined benefit pension or superannuation annuity (PSS, CSS, DFRDB, or commercial lifetime annuities). Set to $0 if you don't have one." />
                   </h4>
                   
                   {enableCoupleTracking && pensionRecipientType === 'couple' ? (
@@ -4235,7 +4235,7 @@ const RetirementCalculator = () => {
             <div className="font-semibold mb-1">Withdrawal Strategy</div>
             <div>1. Calculate spending need (base + splurge + one-offs)</div>
             <div>2. Subtract pension income and Age Pension</div>
-            <div>3. Withdraw remainder: Cash → Buffer → Main Super</div>
+            <div>3. Withdrawal order: Cash → Buffer → Main Super</div>
             <div>4. Apply minimum drawdown (4-14% based on age), excess to Cash</div>
             <div>5. Apply returns: Main Super (variable), Buffer & Cash (3% real)</div>
           </div>
@@ -4245,7 +4245,7 @@ const RetirementCalculator = () => {
           <div className="flex justify-between items-center mb-3">
             <h2 className="text-xl font-bold">
               Pension Summary
-              <InfoTooltip text="Your guaranteed lifetime income from PSS/CSS pension and Age Pension eligibility" />
+              <InfoTooltip text="Your guaranteed lifetime income from defined benefit pension/superannuation annuity and Age Pension eligibility" />
             </h2>
             <button 
               onClick={() => setShowPensionSummary(!showPensionSummary)}
@@ -4261,7 +4261,7 @@ const RetirementCalculator = () => {
               <div className="grid grid-cols-3 gap-4">
                 <div className="p-4 bg-green-50 rounded border border-green-200">
                   <div className="text-sm text-gray-600 mb-1">
-                    PSS/CSS Pension
+                    Defined Benefit/Annuity
                     {enableCoupleTracking && pensionRecipientType === 'couple' ? ' (Combined)' : ''}
                   </div>
                   <div className="text-2xl font-bold text-green-700">
@@ -4278,8 +4278,7 @@ const RetirementCalculator = () => {
                   ) : (
                     <div className="text-xs text-gray-600 mt-2">
                       Starts: {getRetirementYear(retirementAge)}<br/>
-                      ✓ Indexed to CPI ({inflationRate}%)<br/>
-                      ✓ Tax-free in retirement
+                      ✓ Indexed to CPI ({inflationRate}%)
                     </div>
                   )}
                 </div>
@@ -4325,7 +4324,7 @@ const RetirementCalculator = () => {
                     ) : (
                       <>
                         of base spending<br/>
-                        covered by PSS/CSS pension
+                        covered by defined benefit pension
                       </>
                     )}
                   </div>
@@ -4343,13 +4342,13 @@ const RetirementCalculator = () => {
                       <YAxis tickFormatter={(val) => ((val as number)/1000).toFixed(0) + 'k'} />
                       <Tooltip content={<CustomChartTooltip enableCoupleTracking={enableCoupleTracking && pensionRecipientType === 'couple'} partner1Name={partner1.name} partner2Name={partner2.name} />} />
                       <Legend />
-                      <Area type="monotone" dataKey="PSS/CSS Pension" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.6} />
+                      <Area type="monotone" dataKey="Defined Benefit/Annuity" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.6} />
                       <Area type="monotone" dataKey="Age Pension" stackId="1" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
                       <Line type="monotone" dataKey="Total Income" stroke="#8b5cf6" strokeWidth={2} dot={false} />
                     </ComposedChart>
                   </ResponsiveContainer>
                   <div className="mt-2 text-xs text-gray-600">
-                    💡 Stacked areas show PSS/CSS pension (green) + Age Pension (blue). Purple line shows total income.
+                    💡 Stacked areas show defined benefit pension (green) + Age Pension (blue). Purple line shows total income.
                     Age Pension reduces as assets grow due to asset test.
                   </div>
                 </div>
@@ -5819,7 +5818,7 @@ const RetirementCalculator = () => {
                         <div className="flex justify-between items-center">
                           <span className="text-gray-700 flex items-center">
                             Private Pension
-                            <InfoTooltip text="Annual PSS/CSS/defined benefit pension income (Year 1 value). Automatically indexed to inflation each year." />
+                            <InfoTooltip text="Annual defined benefit pension or superannuation annuity income (Year 1 value). Automatically indexed to inflation each year." />
                           </span>
                           <span className="font-semibold">{formatCurrency(privatePensionTotal)}/yr</span>
                         </div>
@@ -6360,7 +6359,7 @@ const RetirementCalculator = () => {
                       </tr>
                       
                       <tr className="border-b border-gray-200">
-                        <td className="p-3 font-medium">PSS/CSS Pension</td>
+                        <td className="p-3 font-medium">Defined Benefit/Annuity</td>
                         <td className="p-3 text-center bg-blue-50">{formatCurrency(currentPension)}/yr</td>
                         {savedScenarios.map((scenario, idx) => (
                           <td key={idx} className="p-3 text-center">{formatCurrency(scenario.params.pension)}/yr</td>
@@ -6376,7 +6375,7 @@ const RetirementCalculator = () => {
                       </tr>
                       
                       <tr className="border-b border-gray-200">
-                        <td className="p-3 font-medium">Base Annual Spending</td>
+                        <td className="p-3 font-medium">Base Annual Spending in Retirement</td>
                         <td className="p-3 text-center bg-blue-50">{formatCurrency(baseSpending)}/yr</td>
                         {savedScenarios.map((scenario, idx) => (
                           <td key={idx} className="p-3 text-center">{formatCurrency(scenario.params.baseSpending)}/yr</td>
@@ -6460,7 +6459,7 @@ const RetirementCalculator = () => {
                         <li><strong>Super Balance:</strong> Test lower/higher starting balances</li>
                         <li><strong>Base Spending:</strong> See impact of more frugal/generous lifestyle</li>
                         <li><strong>Retirement Age:</strong> Compare retiring at 60 vs 65</li>
-                        <li><strong>PSS/CSS Pension:</strong> Model different pension amounts</li>
+                        <li><strong>Defined Benefit/Annuity:</strong> Model different pension amounts</li>
                         <li><strong>Splurge Spending:</strong> Test major expense scenarios</li>
                         <li><strong>Return Scenarios:</strong> Compare optimistic vs pessimistic returns</li>
                       </ul>
@@ -6913,7 +6912,7 @@ const RetirementCalculator = () => {
         )}
 
        <div className="text-center text-sm text-gray-600 mt-6">
-         Australian Retirement Planning Tool v15.4 ·{' '}
+         Australian Retirement Planning Tool v15.5 ·{' '}
          <a
            href="mailto:aust-retirement-calculator@proton.me"
            className="underline"

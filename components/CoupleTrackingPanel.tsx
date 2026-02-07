@@ -79,11 +79,11 @@ export function CoupleTrackingPanel({
             />
           </div>
           
-          {/* Current Age */}
+          {/* Age turning this year */}
           <div>
             <label className="block text-sm font-medium mb-1">
-              Current Age
-              <InfoTooltip text="Partner's age today (Year 1 of simulation starts when first partner retires)" />
+              Age turning this year
+              <InfoTooltip text="The age this partner will turn (or has turned) this calendar year. Year 1 of simulation starts when first partner retires." />
             </label>
             <input
               type="number"
@@ -146,8 +146,8 @@ export function CoupleTrackingPanel({
           {/* Pension Income */}
           <div>
             <label className="block text-sm font-medium mb-1">
-              PSS/CSS Pension (annual)
-              <InfoTooltip text="Annual defined benefit pension for this partner starting from their retirement age. Automatically indexed to inflation." />
+              Defined Benefit/Annuity (net annual)
+              <InfoTooltip text="Annual defined benefit pension or superannuation annuity for this partner (after tax) starting from their retirement age. Includes PSS, CSS, DFRDB, or commercial lifetime annuities. Automatically indexed to inflation." />
             </label>
             <input
               type="number"
@@ -184,7 +184,7 @@ export function CoupleTrackingPanel({
           <div>
             <label className="block text-sm font-medium mb-1">
               Reversionary Rate (%)
-              <InfoTooltip text="Percentage of pension that continues to survivor. PSS default is 67%." />
+              <InfoTooltip text="Percentage of pension that continues to survivor. Typical rates: PSS 67%, CSS 67%, DFRDB 67%." />
             </label>
             <input
               type="number"
@@ -233,7 +233,7 @@ export function CoupleTrackingPanel({
         <p className="text-sm text-gray-700">
           <strong>Note:</strong> When individual tracking is enabled, super balances are tracked separately 
           for each partner. On death, the deceased partner's super is transferred to the survivor. 
-          PSS/CSS pensions continue at the reversionary rate specified above.
+          Defined benefit pensions continue at the reversionary rate specified above.
         </p>
       </div>
     </div>
