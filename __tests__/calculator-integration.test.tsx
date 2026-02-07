@@ -123,7 +123,7 @@ describe('Retirement Calculator - Integration Tests', () => {
       render(<RetirementCalculator />);
       
       // Default base spending: $120,000
-      expect(screen.getByText(/Base Annual Spending/i)).toBeInTheDocument();
+      expect(screen.getByText(/Base Annual Spending in Retirement/i)).toBeInTheDocument();
     });
 
     it('handles different spending patterns', () => {
@@ -157,7 +157,7 @@ describe('Retirement Calculator - Integration Tests', () => {
       render(<RetirementCalculator />);
       
       // Check for spending configuration options
-      expect(screen.getByText(/Base Annual Spending/i)).toBeInTheDocument();
+      expect(screen.getByText(/Base Annual Spending in Retirement/i)).toBeInTheDocument();
     });
   });
 
@@ -258,14 +258,14 @@ describe('Retirement Calculator - Integration Tests', () => {
       
       // With spending > portfolio, should show portfolio exhaustion
       // Should not crash
-      expect(screen.getByText(/Base Annual Spending/i)).toBeInTheDocument();
+      expect(screen.getByText(/Base Annual Spending in Retirement/i)).toBeInTheDocument();
     });
 
     it('handles immediate retirement (current age = retirement age)', () => {
       render(<RetirementCalculator />);
       
       // Should handle case where already retired
-      expect(screen.getByText(/Current Age/i)).toBeInTheDocument();
+      expect(screen.getByText(/Age turning this year/i)).toBeInTheDocument();
       expect(screen.getByText(/Retirement Age/i)).toBeInTheDocument();
     });
   });
@@ -313,14 +313,14 @@ describe('Retirement Calculator - Integration Tests', () => {
       
       // Ages should be between reasonable ranges (18-100)
       // Component should validate this
-      expect(screen.getByText(/Current Age/i)).toBeInTheDocument();
+      expect(screen.getByText(/Age turning this year/i)).toBeInTheDocument();
     });
 
     it('handles valid spending amounts', () => {
       render(<RetirementCalculator />);
       
       // Spending should be positive
-      expect(screen.getByText(/Base Annual Spending/i)).toBeInTheDocument();
+      expect(screen.getByText(/Base Annual Spending in Retirement/i)).toBeInTheDocument();
     });
 
     it('handles valid portfolio amounts', () => {
@@ -435,8 +435,8 @@ describe('Retirement Calculator - Integration Tests', () => {
       // Verify core inputs
       expect(screen.getByText(/Main Super Balance/i)).toBeInTheDocument();
       expect(screen.getByText(/Sequencing Buffer/i)).toBeInTheDocument();
-      expect(screen.getByText(/Base Annual Spending/i)).toBeInTheDocument();
-      expect(screen.getByText(/Current Age/i)).toBeInTheDocument();
+      expect(screen.getByText(/Base Annual Spending in Retirement/i)).toBeInTheDocument();
+      expect(screen.getByText(/Age turning this year/i)).toBeInTheDocument();
       expect(screen.getByText(/Retirement Age/i)).toBeInTheDocument();
     });
   });
